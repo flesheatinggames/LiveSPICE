@@ -1,3 +1,4 @@
 [submodule "ComputerAlgebra"]
 	path = ComputerAlgebra
-	url = https://github.com/dsharlet/ComputerAlgebra.git
+	url = https://github.com/flesheatinggames/ComputerAlgebra.git
+	branch = master
