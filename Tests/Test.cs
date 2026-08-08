@@ -1,6 +1,5 @@
 ﻿using Circuit;
 using ComputerAlgebra;
-using Plotting;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -155,26 +154,6 @@ namespace Tests
             return new double[] { analyzeTime, solveTime, rate };
         }
 
-        public void PlotAll(string Title, Dictionary<Expression, List<double>> Outputs)
-        {
-            Plot p = new Plot()
-            {
-                Title = Title,
-                Width = 1200,
-                Height = 800,
-                x0 = 0,
-                x1 = Outputs.Max(i => i.Value.Count),
-                xLabel = "Time (s)",
-                yLabel = "Voltage (V)",
-            };
-
-            p.Series.AddRange(Outputs.Select(i => new Scatter(
-                i.Value.Select((k, n) => new KeyValuePair<double, double>(n, k)).ToArray())
-            { Name = i.Key.ToString() }));
-
-            System.IO.Directory.CreateDirectory("Plots");
-            p.Save("Plots\\" + Title + ".bmp");
-        }
         public void WriteStatistics(string Title, Dictionary<Expression, List<double>> Outputs)
         {
             string cols = "{0}, {1}, {2}, {3}, {4}";
@@ -190,7 +169,10 @@ namespace Tests
                 sb.AppendLine(string.Format(cols, i.Key, mean, min, max, rms));
             }
 
-            string path = "Stats\\" + Title + ".csv";
+            // A literal backslash is not a separator off Windows, so the old
+            // "Stats\\" + Title spelling wrote a single file named "Stats\Foo.csv"
+            // into the working directory instead of Stats/Foo.csv.
+            string path = Path.Combine("Stats", Title + ".csv");
             System.IO.Directory.CreateDirectory("Stats");
             File.WriteAllText(path, sb.ToString());
         }

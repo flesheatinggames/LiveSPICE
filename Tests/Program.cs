@@ -16,10 +16,9 @@ namespace Tests
         {
             var rootCommand = new RootCommand().WithCommand("test", "Run tests", c => c
                                                     .WithArgument<string>("pattern", "Glob pattern for files to test")
-                                                    .WithOption<bool>(new[] { "--plot" }, "Plot results")
                                                     .WithOption<bool>(new[] { "--stats" }, "Write statistics")
                                                     .WithOption(new[] { "--samples" }, () => 4800, "Samples")
-                                                    .WithHandler(CommandHandler.Create<string, bool, bool, int, int, int, int>(Test)))
+                                                    .WithHandler(CommandHandler.Create<string, bool, int, int, int, int>(Test)))
                                                .WithCommand("benchmark", "Run benchmarks", c => c
                                                     .WithArgument<string>("pattern", "Glob pattern for files to benchmark")
                                                     .WithHandler(CommandHandler.Create<string, int, int, int>(Benchmark)))
@@ -30,7 +29,7 @@ namespace Tests
             return await rootCommand.InvokeAsync(args);
         }
 
-        public static void Test(string pattern, bool plot, bool stats, int sampleRate, int samples, int oversample, int iterations)
+        public static void Test(string pattern, bool stats, int sampleRate, int samples, int oversample, int iterations)
         {
             var log = new ConsoleLog() { Verbosity = MessageType.Info };
             var tester = new Test();
@@ -38,10 +37,6 @@ namespace Tests
             foreach (var circuit in GetCircuits(pattern, log))
             {
                 var outputs = tester.Run(circuit, t => Harmonics(t, 0.5, 82, 2), sampleRate, samples, oversample, iterations);
-                if (plot)
-                {
-                    tester.PlotAll(circuit.Name, outputs);
-                }
                 if (stats)
                 {
                     tester.WriteStatistics(circuit.Name, outputs);

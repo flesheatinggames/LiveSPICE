@@ -1,6 +1,6 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFrameworks>net6.0-windows</TargetFrameworks>
+    <TargetFrameworks>net10.0</TargetFrameworks>
     <OutputType>Exe</OutputType>
     <AssemblyName>CircuitTests</AssemblyName>
     <Product>CircuitTests</Product>
@@ -9,8 +9,13 @@
     <FileVersion>1.0.0.0</FileVersion>
     <LangVersion>8</LangVersion>
     <Nullable>enable</Nullable>
-    <UseWindowsForms>true</UseWindowsForms>
   </PropertyGroup>
+  <ItemGroup>
+    <!-- Plotting/** draws with System.Drawing and System.Windows.Forms, which do not
+         exist off Windows. It was reachable only through the plot option, which this
+         project no longer offers. -->
+    <Compile Remove="Plotting/**" />
+  </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Circuit\Circuit.csproj" />
     <ProjectReference Include="..\ComputerAlgebra\ComputerAlgebra\ComputerAlgebra.csproj" />

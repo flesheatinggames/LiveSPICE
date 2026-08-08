@@ -17,6 +17,11 @@ namespace Tests
         /// <returns>all matching paths</returns>
         public static IEnumerable<string> Glob(string glob)
         {
+            // Accept either separator on any platform. Everything below splits on the
+            // platform separator alone, so off Windows a pattern like Circuits\*.schx
+            // was treated as one filename containing a backslash and matched nothing.
+            glob = glob.Replace('\\', DirSep).Replace('/', DirSep);
+
             foreach (string path in Glob(PathHead(glob) + DirSep, PathTail(glob)))
                 yield return path;
         }
