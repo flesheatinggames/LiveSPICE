@@ -87,7 +87,14 @@ namespace Circuit
             return m;
         }
 
-        public static Quantity Parse(string s) { return Parse(s, CultureInfo.InstalledUICulture); }
+        /// <remarks>
+        /// The invariant culture, not the machine's. A quantity in a string is almost always a value
+        /// out of a .schx file or a component model — "4.7 kΩ" — and those have to read the same on
+        /// every machine. Serialization already passes the invariant culture explicitly; this makes
+        /// the shorthand agree with it instead of quietly depending on where the program is running.
+        /// The overload taking a culture is there for anything a person actually typed.
+        /// </remarks>
+        public static Quantity Parse(string s) { return Parse(s, CultureInfo.InvariantCulture); }
 
         public static implicit operator Expression(Quantity x) { return x.x; }
         public static implicit operator LazyExpression(Quantity x) { return new LazyExpression(x.x); }

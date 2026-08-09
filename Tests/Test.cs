@@ -2,6 +2,7 @@
 using ComputerAlgebra;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -158,15 +159,20 @@ namespace Tests
         {
             string cols = "{0}, {1}, {2}, {3}, {4}";
 
+            // The invariant culture, explicitly. Under a locale whose decimal separator is a comma,
+            // formatting with the machine's culture wrote decimal commas into a comma-separated
+            // file: a five-column row became nine fields, and the checked-in reference files became
+            // unreadable by anything, including this program. The values are machine-read, so they
+            // are formatted the one way that means the same thing everywhere.
             StringBuilder sb = new StringBuilder();
-            sb.AppendLine(string.Format(cols, "var", "mean", "min", "max", "rms"));
+            sb.AppendLine(string.Format(CultureInfo.InvariantCulture, cols, "var", "mean", "min", "max", "rms"));
             foreach (var i in Outputs)
             {
                 double mean = i.Value.Sum() / i.Value.Count;
                 double min = i.Value.Min();
                 double max = i.Value.Max();
                 double rms = Math.Sqrt(i.Value.Select(v => v * v).Sum()) / i.Value.Count;
-                sb.AppendLine(string.Format(cols, i.Key, mean, min, max, rms));
+                sb.AppendLine(string.Format(CultureInfo.InvariantCulture, cols, i.Key, mean, min, max, rms));
             }
 
             // A literal backslash is not a separator off Windows, so the old
