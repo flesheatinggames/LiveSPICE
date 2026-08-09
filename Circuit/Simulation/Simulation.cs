@@ -75,9 +75,37 @@ namespace Circuit
         /// </summary>
         public int Oversample { get { return oversample; } set { oversample = value; InvalidateProcess(); } }
 
-        private int iterations = 8;
+        /// <summary>
+        /// The iteration budget a simulation gets unless it is told otherwise.
+        /// </summary>
+        /// <remarks>
+        /// This is a cap, not a count. Every execution path leaves the loop the moment the
+        /// convergence test passes, so a circuit that converges in three iterations costs the same
+        /// whatever this says. Milestone A2.5 measured that rather than assuming it: across the five
+        /// circuits milestone A0 timed, at eight times oversampling and twenty thousand blocks, the
+        /// median share of the buffer period changes by less than a tenth of a percentage point
+        /// between a budget of 8 and one of 48, and the worst block of twenty thousand shows no
+        /// trend at all.
+        ///
+        /// It was 8, which is what LiveSPICE has always shipped, and 8 is too low for every
+        /// nonlinear circuit this project uses as a reference. The hardest of them, the precision
+        /// rectifier driven hard, needs 34; the others need 26 to 28. At 8 the rectifier does not
+        /// merely lose accuracy, it diverges outright. 48 is that measured requirement with about
+        /// forty per cent of margin on top, which is affordable precisely because the budget is a
+        /// cap.
+        ///
+        /// It is emphatically not an answer for a circuit nobody has seen. There is no budget that
+        /// is large enough for every circuit, and the right response to one that will not converge
+        /// is to report it — specification 3.10 puts solver non-convergence in the event vocabulary
+        /// as a blocker for exactly this reason — rather than to grind. What a generous default buys
+        /// is that the report means something when it does arrive.
+        /// </remarks>
+        public const int DefaultIterations = 48;
+
+        private int iterations = DefaultIterations;
         /// <summary>
         /// Maximum number of iterations allowed for the simulation to converge.
+        /// See <see cref="DefaultIterations"/>.
         /// </summary>
         public int Iterations { get { return iterations; } set { iterations = value; InvalidateProcess(); } }
 
@@ -109,8 +137,16 @@ namespace Circuit
             SyncBeforeNewton,
         }
 
-        private SubexpressionMode subexpressions = SubexpressionMode.Reuse;
-        /// <summary>See <see cref="SubexpressionMode"/>. Defaults to the shipping behaviour.</summary>
+        private SubexpressionMode subexpressions = SubexpressionMode.SyncAfterNewton;
+        /// <summary>
+        /// See <see cref="SubexpressionMode"/>. Defaults to the fix rather than to the behaviour
+        /// that shipped, because milestone A2.5 established that the reuse across the loop's exit is
+        /// wrong and measured what it costs. On the precision rectifier and the Pro Co Rat the stale
+        /// value feeds a capacitor voltage, so it enters the integrator and stays there, and their
+        /// renders differ from the corrected ones by 34 and 23 per cent of peak on solves that fully
+        /// converge. Five of the nine circuits measured are bit-identical either way, which is a fact
+        /// about their solution schedules rather than about the size of the error.
+        /// </summary>
         public SubexpressionMode Subexpressions
         {
             get { return subexpressions; }

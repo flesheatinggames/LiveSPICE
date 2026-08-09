@@ -58,13 +58,41 @@ namespace Circuit
         public bool DependsOn(Expression x) { return solutions.Any(i => i.DependsOn(x)); }
 
         /// <summary>
+        /// Convergence threshold for the steady-state solve that produces the initial conditions.
+        /// </summary>
+        /// <remarks>
+        /// Set here rather than in NSolve, whose own default this replaces, so that the choice is
+        /// scoped to circuit solving and cannot surprise another caller of a general-purpose
+        /// numerical routine.
+        ///
+        /// NSolve stops when the sum of the squares of the residuals falls below Epsilon squared
+        /// times the number of unknowns, so this is an absolute threshold on a residual vector whose
+        /// entries are a mixture of amperes and volts. That mixture is why the value has to be
+        /// measured rather than reasoned about: a microamp is a generous residual on a node carrying
+        /// milliamps and a meaningless one on a transistor base carrying a few microamps, where it
+        /// permits an error of a fifth of the signal. NSolve's own default of 1e-6 is that second
+        /// case, and it left the common emitter's bias point 1.4e-4 V from the answer.
+        ///
+        /// A picoamp, or a picovolt. Chosen from a sweep from 1e-6 to 1e-14 across all four
+        /// reference circuits and all 53 schematics in the repository: the reference circuits stop
+        /// improving at 1e-9, where the common emitter's base voltage reaches the independently
+        /// computed forty-digit answer to 2.3e-12 V, and 1e-14 is the tightest value at which
+        /// everything still solves. This sits three decades past the first and two above the second,
+        /// so it is on neither cliff. Nothing anywhere in the repository failed to solve that did
+        /// not already fail at 1e-6, and no solve measurably slowed down. See
+        /// docs/stompbench-a2.5-result.md.
+        /// </remarks>
+        public const double SteadyStateEpsilon = 1e-12;
+
+        /// <summary>
         /// Solve the circuit for transient simulation.
         /// </summary>
         /// <param name="Analysis">Analysis from the circuit to solve.</param>
         /// <param name="TimeStep">Discretization timestep.</param>
         /// <param name="Log">Where to send output.</param>
+        /// <param name="Epsilon">Convergence threshold for the steady-state solve. See <see cref="SteadyStateEpsilon"/>.</param>
         /// <returns>TransientSolution describing the solution of the circuit.</returns>
-        public static TransientSolution Solve(Analysis Analysis, Expression TimeStep, IEnumerable<Arrow> InitialConditions, ILog Log)
+        public static TransientSolution Solve(Analysis Analysis, Expression TimeStep, IEnumerable<Arrow> InitialConditions, ILog Log, double Epsilon = SteadyStateEpsilon)
         {
             Expression h = TimeStep;
 
@@ -110,7 +138,7 @@ namespace Circuit
                 LogExpressions(Log, MessageType.Verbose, "Steady state system for partition:", i.Select(j => Equal.New(j, 0)));
                 try
                 {
-                    List<Arrow> part = i.Equations.Select(j => Equal.New(j, 0)).NSolve(i.Unknowns.Select(j => Arrow.New(j, 0)));
+                    List<Arrow> part = i.Equations.Select(j => Equal.New(j, 0)).NSolve(i.Unknowns.Select(j => Arrow.New(j, 0)), Epsilon, 64);
                     initial.AddRange(part);
                     LogExpressions(Log, MessageType.Verbose, "Initial conditions:", part); 
                 }
