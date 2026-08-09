@@ -81,6 +81,42 @@ namespace Circuit
         /// </summary>
         public int Iterations { get { return iterations; } set { iterations = value; InvalidateProcess(); } }
 
+        /// <summary>
+        /// How the generated code treats subexpressions computed inside Newton's method.
+        /// </summary>
+        /// <remarks>
+        /// Added for Stompbench milestone A2, which exists to answer whether the reuse is correct.
+        /// The compiler remembers each intermediate it computes and reuses it when the same
+        /// expression is compiled again. Within one Newton iteration that is valid and valuable —
+        /// the same junction current appears in several equations and should be evaluated once.
+        /// After the iteration ends it is not obviously valid, because the loop applies its final
+        /// correction to the unknowns and then breaks, so every cached intermediate was computed at
+        /// the previous iterate and everything emitted afterwards reads a value one update stale.
+        ///
+        /// These four settings are the experiment. Reuse is what ships. Disabled removes the cache
+        /// entirely and is the control: with nothing cached there is nothing stale, so a difference
+        /// between it and Reuse is the staleness and can be nothing else. SyncAfterNewton clears the
+        /// cache where the loop closes, which is the candidate fix and keeps the valid
+        /// within-iteration elimination. SyncBeforeNewton clears it where nothing has been cached
+        /// yet and must therefore change nothing at all; it is there to prove the mechanism is the
+        /// clearing rather than the act of calling for it.
+        /// </remarks>
+        public enum SubexpressionMode
+        {
+            Reuse,
+            Disabled,
+            SyncAfterNewton,
+            SyncBeforeNewton,
+        }
+
+        private SubexpressionMode subexpressions = SubexpressionMode.Reuse;
+        /// <summary>See <see cref="SubexpressionMode"/>. Defaults to the shipping behaviour.</summary>
+        public SubexpressionMode Subexpressions
+        {
+            get { return subexpressions; }
+            set { subexpressions = value; InvalidateProcess(); }
+        }
+
         private bool diagnostics = false;
         /// <summary>
         /// Record what Newton's method did during the simulation. Off by default.
@@ -258,6 +294,7 @@ namespace Circuit
 
             // Lambda code generator.
             CodeGen code = new CodeGen();
+            code.ReuseIntermediates = subexpressions != SubexpressionMode.Disabled;
 
             // Create parameters for the basic simulation info (N, t, Iterations).
             ParamExpr SampleCount = code.Decl<int>(Scope.Parameter, "SampleCount");
@@ -393,6 +430,12 @@ namespace Circuit
                                     finalDelta = code.ReDeclInit<double>("finalDelta", 0.0);
                                 }
 
+                                // Nothing has been cached at this point that the loop will disturb,
+                                // so clearing here must change nothing. That is the whole purpose of
+                                // this setting: it is the inert control for the one below.
+                                if (subexpressions == SubexpressionMode.SyncBeforeNewton)
+                                    code.SyncPoint();
+
                                 // int it = iterations
                                 LinqExpr it = code.ReDeclInit<int>("it", Iterations);
                                 // do { ... --it } while(it > 0)
@@ -429,6 +472,16 @@ namespace Circuit
                                     // --it;
                                     code.Add(LinqExpr.PreDecrementAssign(it));
                                 }, LinqExpr.GreaterThan(it, Zero));
+
+                                // The candidate fix. The loop above adds its final correction to the
+                                // unknowns and then breaks, so every intermediate cached during that
+                                // last iteration was computed at the previous iterate. Clearing here
+                                // makes everything emitted afterwards — the linear solutions and the
+                                // output expressions — read values computed from the unknowns as they
+                                // now stand, while leaving the within-iteration elimination, which is
+                                // valid and is where the saving is, untouched.
+                                if (subexpressions == SubexpressionMode.SyncAfterNewton)
+                                    code.SyncPoint();
 
                                 // This is the residual check that stood here commented out. It is
                                 // the authoritative statement of whether the system was solved: each
