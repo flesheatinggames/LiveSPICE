@@ -81,6 +81,67 @@ namespace Circuit
         /// </summary>
         public int Iterations { get { return iterations; } set { iterations = value; InvalidateProcess(); } }
 
+        private bool diagnostics = false;
+        /// <summary>
+        /// Record what Newton's method did during the simulation. Off by default.
+        /// </summary>
+        /// <remarks>
+        /// Added for Stompbench milestone A2. Without it there is no way to find out whether a
+        /// simulation converged: the iteration simply stops when its budget runs out, and the
+        /// residual check that would have caught it is commented out below. A render produced by a
+        /// silently non-converging solve looks exactly like a render produced by a converging one,
+        /// which makes it possible to bless a golden file made of numbers that satisfy no equation.
+        ///
+        /// When this is false the generated code is identical to what it was before this property
+        /// existed — every addition below is inside a generation-time condition, so nothing is
+        /// emitted and the simulation pays nothing. That matters because the emitted native executor
+        /// is gated on reproducing this path bit for bit.
+        /// </remarks>
+        public bool Diagnostics { get { return diagnostics; } set { diagnostics = value; InvalidateProcess(); } }
+
+        // Diagnostic counters. Written only by generated code, and only when Diagnostics is set.
+        private GlobalExpr<long> newtonSteps = new GlobalExpr<long>(0);
+        private GlobalExpr<long> exhaustedSteps = new GlobalExpr<long>(0);
+        private GlobalExpr<double> worstFinalDelta = new GlobalExpr<double>(0.0);
+        private GlobalExpr<double> worstResidual = new GlobalExpr<double>(0.0);
+
+        /// <summary>Newton solves performed, counting one per solution set per simulation step.</summary>
+        public long NewtonSteps { get { return newtonSteps.Value; } }
+
+        /// <summary>
+        /// Newton solves that used the whole iteration budget without meeting the convergence test.
+        /// </summary>
+        /// <remarks>
+        /// Detected exactly rather than estimated. The loop counter reaches zero if and only if the
+        /// budget was exhausted: a solve that converges leaves the loop through its break with the
+        /// counter still positive, and a solve that does not decrements it to zero and fails the
+        /// loop condition. There is no case where the two are confused.
+        /// </remarks>
+        public long ExhaustedSteps { get { return exhaustedSteps.Value; } }
+
+        /// <summary>
+        /// The largest correction Newton's method was still applying when it stopped, over the whole
+        /// simulation. Small means the iterate had settled; large means it had not.
+        /// </summary>
+        public double WorstFinalDelta { get { return worstFinalDelta.Value; } }
+
+        /// <summary>
+        /// The largest value any equation of the nonlinear system took at the last iterate a solve
+        /// evaluated, over the whole simulation. Each equation is zero when solved, so this is how
+        /// far from solved the system actually was — the measure the convergence test only
+        /// approximates by looking at the size of the correction instead.
+        /// </summary>
+        public double WorstResidual { get { return worstResidual.Value; } }
+
+        /// <summary>Sets every diagnostic counter back to zero.</summary>
+        public void ResetDiagnostics()
+        {
+            newtonSteps.Value = 0;
+            exhaustedSteps.Value = 0;
+            worstFinalDelta.Value = 0.0;
+            worstResidual.Value = 0.0;
+        }
+
         /// <summary>
         /// The sampling rate of this simulation, the sampling rate of the transient solution divided by the oversampling factor.
         /// </summary>
@@ -316,18 +377,37 @@ namespace Circuit
                                 foreach (Arrow i in S.Guesses)
                                     code.DeclInit(i.Left, i.Right);
 
+                                // The two diagnostic accumulators live outside the iteration loop
+                                // because the loop pushes a scope: anything declared inside it,
+                                // including every dv, is unreachable once it closes. That is why the
+                                // residual check below this loop was never revivable as written —
+                                // it names values that have gone out of scope by the time it runs.
+                                // Both are overwritten rather than accumulated within a solve, so
+                                // after the loop each holds the value from the last iteration that
+                                // actually ran.
+                                LinqExpr residual = null;
+                                LinqExpr finalDelta = null;
+                                if (diagnostics)
+                                {
+                                    residual = code.ReDeclInit<double>("residual", 0.0);
+                                    finalDelta = code.ReDeclInit<double>("finalDelta", 0.0);
+                                }
+
                                 // int it = iterations
                                 LinqExpr it = code.ReDeclInit<int>("it", Iterations);
                                 // do { ... --it } while(it > 0)
                                 code.DoWhile((Break) =>
                                 {
                                     // Solve the un-solved system.
-                                    Solve(code, JxF, S.Equations, S.UnknownDeltas);
+                                    Solve(code, JxF, S.Equations, S.UnknownDeltas, residual);
 
                                     // Compile the pre-solved solutions.
                                     if (S.KnownDeltas != null)
                                         foreach (Arrow i in S.KnownDeltas)
                                             code.DeclInit(i.Left, i.Right);
+
+                                    if (diagnostics)
+                                        code.Add(LinqExpr.Assign(finalDelta, LinqExpr.Constant(0.0)));
 
                                     // bool done = true
                                     LinqExpr done = code.ReDeclInit("done", true);
@@ -338,6 +418,8 @@ namespace Circuit
 
                                         // done &= (|dv| < |v|*epsilon)
                                         code.Add(LinqExpr.AndAssign(done, LinqExpr.LessThan(Abs(dv), MultiplyAdd(Abs(v), LinqExpr.Constant(1e-4), LinqExpr.Constant(1e-6)))));
+                                        if (diagnostics)
+                                            code.Add(LinqExpr.Assign(finalDelta, Max(finalDelta, Abs(dv))));
                                         // v += dv
                                         code.Add(LinqExpr.AddAssign(v, dv));
                                     }
@@ -348,13 +430,31 @@ namespace Circuit
                                     code.Add(LinqExpr.PreDecrementAssign(it));
                                 }, LinqExpr.GreaterThan(it, Zero));
 
-                                //// bool failed = false
-                                //LinqExpr failed = Decl(code, code, "failed", LinqExpr.Constant(false));
-                                //for (int i = 0; i < eqs.Length; ++i)
-                                //    // failed |= |JxFi| > epsilon
-                                //    code.Add(LinqExpr.OrAssign(failed, LinqExpr.GreaterThan(Abs(eqs[i].ToExpression().Compile(map)), LinqExpr.Constant(1e-3))));
-
-                                //code.Add(LinqExpr.IfThen(failed, ThrowSimulationDiverged(n)));
+                                // This is the residual check that stood here commented out. It is
+                                // the authoritative statement of whether the system was solved: each
+                                // equation of the Newton system is zero at a solution, so the size of
+                                // the largest one is how far from a solution the iterate is. The
+                                // convergence test inside the loop asks a different and weaker
+                                // question — whether the last correction was small — which a solve
+                                // that is crawling rather than converging also answers yes to.
+                                //
+                                // It is gathered inside Solve, from the constant column of the
+                                // system as it is built, because that column is F(y) at the current
+                                // iterate and is computed there anyway. Reading it from the matrix
+                                // rather than recompiling the equations here also keeps the
+                                // measurement clear of the subexpression cache, which after the loop
+                                // holds values from one update ago.
+                                if (diagnostics)
+                                {
+                                    // ++steps
+                                    code.Add(LinqExpr.AddAssign(newtonSteps, LinqExpr.Constant(1L)));
+                                    // if (it == 0) ++exhausted
+                                    code.Add(LinqExpr.IfThen(
+                                        LinqExpr.Equal(it, Zero),
+                                        LinqExpr.AddAssign(exhaustedSteps, LinqExpr.Constant(1L))));
+                                    code.Add(LinqExpr.Assign(worstResidual, Max(worstResidual, residual)));
+                                    code.Add(LinqExpr.Assign(worstFinalDelta, Max(worstFinalDelta, finalDelta)));
+                                }
                             }
                         }
 
@@ -414,13 +514,22 @@ namespace Circuit
         }
 
         // Solve a system of linear equations
-        private static void Solve(CodeGen code, LinqExpr Ab, IEnumerable<LinearCombination> Equations, IEnumerable<Expression> Unknowns)
+        //
+        // Residual, when not null, is a variable that receives the largest absolute value of the
+        // system's constant column — F(y) at the current iterate, which is the residual of the
+        // nonlinear system. It is assigned rather than accumulated, so that after the iteration
+        // loop it holds the value from the last iteration that ran rather than from the first,
+        // where a large residual is expected and means nothing.
+        private static void Solve(CodeGen code, LinqExpr Ab, IEnumerable<LinearCombination> Equations, IEnumerable<Expression> Unknowns, LinqExpr Residual = null)
         {
             LinearCombination[] eqs = Equations.ToArray();
             Expression[] deltas = Unknowns.ToArray();
 
             int M = eqs.Length;
             int N = deltas.Length;
+
+            if (Residual != null)
+                code.Add(LinqExpr.Assign(Residual, LinqExpr.Constant(0.0)));
 
             // Initialize the matrix.
             for (int i = 0; i < M; ++i)
@@ -430,9 +539,10 @@ namespace Circuit
                     code.Add(LinqExpr.Assign(
                         LinqExpr.ArrayAccess(Abi, LinqExpr.Constant(x)),
                         code.Compile(eqs[i][deltas[x]])));
-                code.Add(LinqExpr.Assign(
-                    LinqExpr.ArrayAccess(Abi, LinqExpr.Constant(N)),
-                    code.Compile(eqs[i][1])));
+                LinqExpr constant = LinqExpr.ArrayAccess(Abi, LinqExpr.Constant(N));
+                code.Add(LinqExpr.Assign(constant, code.Compile(eqs[i][1])));
+                if (Residual != null)
+                    code.Add(LinqExpr.Assign(Residual, Max(Residual, Abs(constant))));
             }
             // In case we have fewer equations than unknowns, we can avoid dumb failures to converge by just
             // avoiding "uninitialized" memory left over in the buffer from previous solutions.
@@ -609,6 +719,8 @@ namespace Circuit
         private static LinqExpr Reciprocal(LinqExpr x) { return LinqExpr.Divide(ConstantExpr(1.0, x.Type), x); }
         // Returns abs(x).
         private static LinqExpr Abs(LinqExpr x) { return LinqExpr.Call(GetMethod(typeof(Math), "Abs", x.Type), x); }
+        // Returns max(a, b).
+        private static LinqExpr Max(LinqExpr a, LinqExpr b) { return LinqExpr.Call(GetMethod(typeof(Math), "Max", a.Type, b.Type), a, b); }
         // Returns x*x.
         private static LinqExpr Square(LinqExpr x) { return LinqExpr.Multiply(x, x); }
 
