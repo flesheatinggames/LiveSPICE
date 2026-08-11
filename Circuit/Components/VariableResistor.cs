@@ -80,11 +80,44 @@ namespace Circuit
 
         public override void Analyze(Analysis Mna)
         {
-            Expression P = AdjustWipe(wipe, sweep);
+            if (!Mna.LiveParameters)
+            {
+                // Exactly what this component did before Stompbench milestone A4.
+                Resistor.Analyze(Mna, Name, Anode, Cathode, (Expression)Resistance * AdjustWipe(wipe, sweep));
+                return;
+            }
 
-            Resistor.Analyze(Mna, Name, Anode, Cathode, (Expression)Resistance * P);
+            // A conductance rather than a resistance, for the reason given in
+            // Resistor.AnalyzeConductance: modified nodal analysis is linear in one and not the
+            // other, and the difference only shows once the value is a symbol.
+            //
+            // The sweep is captured now rather than read from the field inside the mapping, so that
+            // the parameter handed out here always describes the curve these equations were built
+            // with. A sweep change is a structural change and invalidates the analysis; a parameter
+            // whose curve silently followed the field would not say so.
+            SweepType s = sweep;
+            double resistance = (double)Resistance;
+
+            Func<double, double> conductance = x => 1.0 / (resistance * AdjustWipe(x, s));
+            LiveParameter.RangeOf(conductance, out double low, out double high);
+
+            Expression G = Mna.DeclareParameter(Name, "G", wipe, conductance, low, high);
+
+            Resistor.AnalyzeConductance(Mna, Name, Anode, Cathode, G);
         }
 
+        /// <summary>
+        /// The taper: turns a control position into the fraction of the resistance in circuit.
+        /// </summary>
+        /// <remarks>
+        /// Stompbench milestone A4 left this on the control side rather than making it symbolic. The
+        /// clamp on the first line is why that decision is not merely tidy: it is the only thing
+        /// standing between a control surface and a zero resistance, which is a division by zero in
+        /// the current through it, and doing it here means the equations never see the degenerate
+        /// value at all. The curves would also have made a linear circuit nonlinear if they had gone
+        /// into the equations, because a <c>Pow</c> in a coefficient creates a Newton iteration where
+        /// none existed.
+        /// </remarks>
         public static double AdjustWipe(double x, SweepType Sweep)
         {
             x = Math.Min(Math.Max(x, 1e-3), 1.0 - 1e-3);

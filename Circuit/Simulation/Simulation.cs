@@ -66,7 +66,92 @@ namespace Circuit
         public TransientSolution Solution
         {
             get { return solution; }
-            set { solution = value; InvalidateProcess(); }
+            set { solution = value; BindParameters(); InvalidateProcess(); }
+        }
+
+        // --- Live parameters ------------------------------------------------------------------
+        //
+        // Kept apart from the `globals` dictionary below, and the reason is not tidiness. A global is
+        // loaded into a local at the top of a block and stored back at the bottom, so a write that
+        // arrived while the block was running would be overwritten by the value the block started
+        // with. A parameter is loaded and never stored back, which is what makes a write between
+        // blocks the last word.
+        //
+        // Added for Stompbench milestone A4. Before it there was nothing to bind: a potentiometer's
+        // position was multiplied into the equations during analysis and no symbol for it survived.
+
+        private readonly Dictionary<string, GlobalExpr<double>> parameterStorage =
+            new Dictionary<string, GlobalExpr<double>>();
+
+        /// <summary>The control positions, by the component each control belongs to.</summary>
+        private readonly Dictionary<string, double> controlPositions = new Dictionary<string, double>();
+
+        /// <summary>Control names in declaration order, so the listing is stable.</summary>
+        private readonly List<string> controls = new List<string>();
+
+        /// <summary>
+        /// The components of this circuit whose value can be changed while it runs, named as a
+        /// control surface addresses them. One entry per component, not per parameter: a
+        /// potentiometer is two conductances and one knob.
+        /// </summary>
+        public IEnumerable<string> Controls { get { return controls; } }
+
+        /// <summary>Where a control currently is, from 0 to 1 for a wiper.</summary>
+        public double GetControl(string Name)
+        {
+            double position;
+            if (!controlPositions.TryGetValue(Name, out position))
+                throw new ArgumentException("This circuit has no live control called '" + Name + "'.");
+            return position;
+        }
+
+        /// <summary>
+        /// Moves a control, which writes every parameter it drives and takes effect from the next
+        /// block. Does not invalidate the compiled process — not solving, lowering or compiling
+        /// again is the whole point.
+        /// </summary>
+        public void SetControl(string Name, double Position)
+        {
+            if (!controlPositions.ContainsKey(Name))
+                throw new ArgumentException("This circuit has no live control called '" + Name + "'.");
+
+            foreach (LiveParameter i in solution.Parameters)
+            {
+                if (i.Component != Name)
+                    continue;
+
+                double value = i.Map(Position);
+                if (!(value >= i.Minimum && value <= i.Maximum))
+                {
+                    throw new ArgumentOutOfRangeException(
+                        "Position",
+                        "Control '" + Name + "' at " + Position + " maps parameter '" + i.Name +
+                        "' to " + value + ", outside the range [" + i.Minimum + ", " + i.Maximum +
+                        "] the equations were derived for.");
+                }
+                parameterStorage[i.Name].Value = value;
+            }
+            controlPositions[Name] = Position;
+        }
+
+        /// <summary>The value a named parameter currently holds, in whatever unit it is in.</summary>
+        public double GetParameter(string Name) { return parameterStorage[Name].Value; }
+
+        private void BindParameters()
+        {
+            parameterStorage.Clear();
+            controlPositions.Clear();
+            controls.Clear();
+
+            foreach (LiveParameter i in solution.Parameters)
+            {
+                parameterStorage.Add(i.Name, new GlobalExpr<double>(i.Value));
+                if (!controlPositions.ContainsKey(i.Component))
+                {
+                    controlPositions.Add(i.Component, i.Position);
+                    controls.Add(i.Component);
+                }
+            }
         }
 
         private int oversample = 8;
@@ -308,6 +393,7 @@ namespace Circuit
         public Simulation(TransientSolution Solution)
         {
             solution = Solution;
+            BindParameters();
 
             // If any system depends on the previous value of an unknown, we need a global variable for it.
             for (int n = -1; n >= MaxDelay; n--)
@@ -425,6 +511,16 @@ namespace Circuit
 
             // double invOversample = 1 / Oversample
             LinqExpr invOversample = LinqExpr.Constant(1.0 / (double)Oversample);
+
+            // Live parameters, read from memory rather than folded in. Declared before the globals
+            // because the solved expressions below reference them and every declaration has to be in
+            // scope before anything compiles against it.
+            //
+            // Unlike the globals, these are never copied back at the end of the function. A
+            // parameter is written from outside and read from inside; storing the local back over it
+            // would lose any write that arrived while the block was running.
+            foreach (LiveParameter i in Solution.Parameters)
+                code.DeclInit(i.Symbol, parameterStorage[i.Name]);
 
             // Load the globals to local variables and add them to the map.
             foreach (KeyValuePair<Expression, GlobalExpr<double>> i in globals)

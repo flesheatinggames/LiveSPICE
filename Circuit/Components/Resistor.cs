@@ -35,6 +35,30 @@ namespace Circuit
         }
         public static Expression Analyze(Analysis Mna, Node Anode, Node Cathode, Expression R) { return Analyze(Mna, "", Anode, Cathode, R); }
 
+        /// <summary>
+        /// The same component written the other way up: i = V*G rather than i = V/R.
+        /// </summary>
+        /// <remarks>
+        /// Added for Stompbench milestone A4, which measured why it matters. Modified nodal analysis
+        /// is linear in conductance and not in resistance, so where the value is a symbol rather than
+        /// a number the two forms are not interchangeable. Written as i = V/R the symbol lands in a
+        /// denominator, every row-reduction step has to put rows over a common denominator, and the
+        /// solved expressions grow as rational functions of it. Written as i = V*G the symbol is a
+        /// plain coefficient and the elimination handles it the way it handles every other one.
+        ///
+        /// This makes no difference at all when the value is a number, because either form folds. It
+        /// is only for the symbolic case, which is why the components that use it fall back to
+        /// <see cref="Analyze(Analysis, string, Node, Node, Expression)"/> when their value is baked:
+        /// that path folds an exact rational where this one would fold a rounded reciprocal, and
+        /// keeping it means the baked setting is exactly the behaviour that shipped before A4.
+        /// </remarks>
+        public static Expression AnalyzeConductance(Analysis Mna, string Name, Node Anode, Node Cathode, Expression G)
+        {
+            Expression i = (Anode.V - Cathode.V) * G;
+            Mna.AddPassiveComponent(Anode, Cathode, i);
+            return i;
+        }
+
         public override void Analyze(Analysis Mna) { Analyze(Mna, Name, Anode, Cathode, Resistance); }
 
         public static void Draw(SymbolLayout Sym, double x, double y1, double y2, int N, double Scale)

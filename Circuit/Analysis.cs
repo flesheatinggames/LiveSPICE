@@ -14,6 +14,38 @@ namespace Circuit
     }
 
     /// <summary>
+    /// What an analysis is allowed to leave symbolic.
+    /// </summary>
+    /// <remarks>
+    /// Added for Stompbench milestone A4. Specification 3.3 names a per-circuit opt-out back to baked
+    /// constants as the escape hatch for a circuit that cannot afford live parameters; A4 measured
+    /// the cost and found it is the other way round, so this is opt-in rather than opt-out.
+    ///
+    /// What the measurement found, in full in docs/stompbench-a4-result.md: leaving a wiper symbolic
+    /// costs between nothing and a hundred and twenty-four times the solve, and two circuits in the
+    /// repository do not merely cost more but stop working. Until that is understood, a caller has to
+    /// ask for a live parameter, and the answer to "what does this circuit do" is the same as it was
+    /// before the milestone.
+    /// </remarks>
+    public sealed class AnalysisOptions
+    {
+        /// <summary>
+        /// Whether component values a player might change while playing stay symbolic. False, the
+        /// default, bakes each one into the equations at the value it currently has, which is what
+        /// the library did before A4 and is the behaviour every solve is compared against.
+        /// </summary>
+        public bool LiveParameters = false;
+
+        public static AnalysisOptions Default { get { return new AnalysisOptions(); } }
+
+        /// <summary>Everything baked, which is the pre-A4 behaviour and the default.</summary>
+        public static AnalysisOptions Baked { get { return new AnalysisOptions { LiveParameters = false }; } }
+
+        /// <summary>Potentiometer and variable resistor values left symbolic.</summary>
+        public static AnalysisOptions Live { get { return new AnalysisOptions { LiveParameters = true }; } }
+    }
+
+    /// <summary>
     /// Helper class for building a system of MNA equations and unknowns.
     /// </summary>
     public class Analysis : DynamicNamespace
@@ -22,6 +54,26 @@ namespace Circuit
         private List<Expression> unknowns = new List<Expression>();
         private Dictionary<Expression, Expression> kcl = new Dictionary<Expression, Expression>();
         private List<Arrow> initialConditions = new List<Arrow>();
+        private List<LiveParameter> parameters = new List<LiveParameter>();
+
+        private AnalysisOptions options = AnalysisOptions.Default;
+        /// <summary>What this analysis is allowed to leave symbolic. See <see cref="AnalysisOptions"/>.</summary>
+        public AnalysisOptions Options { get { return options; } set { options = value ?? AnalysisOptions.Default; } }
+
+        /// <summary>
+        /// Whether component values a player might change stay symbolic in this system.
+        /// </summary>
+        /// <remarks>
+        /// A component reads this when the two cases want different algebra rather than the same
+        /// algebra over a different symbol — which is the potentiometer's situation, and is why this
+        /// is exposed at all rather than being hidden entirely behind
+        /// <see cref="DeclareParameter"/>. Anything that merely needs a value should call that and
+        /// not ask.
+        /// </remarks>
+        public bool LiveParameters { get { return options.LiveParameters; } }
+
+        public Analysis() { }
+        public Analysis(AnalysisOptions Options) { options = Options ?? AnalysisOptions.Default; }
 
         // Describes the analysis of a subcircuit.
         protected class Circuit
@@ -130,9 +182,68 @@ namespace Circuit
         public IEnumerable<Expression> Unknowns { get { return kcl.Keys.Concat(unknowns); } }
 
         /// <summary>
-        /// Enumerates the inputs 
+        /// Enumerates the inputs
         /// </summary>
         public IEnumerable<Arrow> InitialConditions { get { return initialConditions; } }
+
+        /// <summary>
+        /// The component values left symbolic in this system, in the order they were declared.
+        /// Empty when <see cref="AnalysisOptions.LiveParameters"/> is off, and empty for a circuit
+        /// that has nothing a player would turn.
+        /// </summary>
+        public IEnumerable<LiveParameter> Parameters { get { return parameters; } }
+
+        /// <summary>
+        /// Substitutions putting every live parameter back to the value it was analyzed at. Applying
+        /// these to a system recovers exactly the system that would have been built with the
+        /// parameters baked, which is what the steady-state solve needs and what makes a
+        /// live-against-baked comparison a comparison of one thing.
+        /// </summary>
+        public IEnumerable<Arrow> BakedParameters
+        {
+            get { return parameters.Select(i => i.Baked); }
+        }
+
+        /// <summary>
+        /// Declares a component value that stays symbolic, and returns what the component should put
+        /// in its equations in place of the number: the symbol when parameters are live, and the
+        /// number itself when they are not.
+        /// </summary>
+        /// <param name="Name">The component's name. The current context's prefix is added to it.</param>
+        /// <param name="Quantity">Which of the component's values this is, such as "Wipe".</param>
+        /// <param name="Position">Where the control is, which for a wiper is 0 to 1.</param>
+        /// <param name="Map">
+        /// Turns a control position into the value the equations want, applying whatever curve and
+        /// clamp the component defines. It must land inside [Minimum, Maximum] for every input,
+        /// because the equations are only valid there and nothing downstream re-checks.
+        /// </param>
+        /// <remarks>
+        /// A component calls this instead of computing a number, so the decision about whether the
+        /// value is live belongs to the analysis rather than to the component. That matters because
+        /// the opt-out has to reach every component at once: a circuit half baked and half symbolic
+        /// would be neither the thing that was measured nor the thing that was compared against.
+        /// </remarks>
+        public Expression DeclareParameter(
+            string Name, string Quantity, double Position, Func<double, double> Map,
+            double Minimum, double Maximum)
+        {
+            if (!options.LiveParameters)
+                return Map(Position);
+
+            string full = context.Prefix + Name + "." + Quantity;
+            if (parameters.Any(i => i.Name == full))
+            {
+                throw new AnalysisException(
+                    "Two components in the same circuit are both called '" + context.Prefix + Name +
+                    "', so their '" + Quantity + "' parameters would share the name '" + full +
+                    "' and a write to one would move both.");
+            }
+
+            LiveParameter parameter = new LiveParameter(
+                full, context.Prefix + Name, Quantity, Position, Map, Minimum, Maximum);
+            parameters.Add(parameter);
+            return parameter.Symbol;
+        }
 
         /// <summary>
         /// Add a current to the given node.

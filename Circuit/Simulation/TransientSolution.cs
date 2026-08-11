@@ -33,8 +33,23 @@ namespace Circuit
         /// </summary>
         public IEnumerable<Arrow> InitialConditions { get { return initialConditions; } }
 
+        private IEnumerable<LiveParameter> parameters;
         /// <summary>
-        /// 
+        /// The component values this solution left symbolic, which a caller may change without
+        /// solving again. Empty for a circuit with nothing a player would turn, and empty when the
+        /// analysis was told to bake them.
+        /// </summary>
+        /// <remarks>
+        /// Carried on the solution rather than looked up from the analysis again because these are
+        /// the parameters this particular solution was built with. The two can differ: an analysis
+        /// can be solved more than once, and the steady-state solve below substitutes their values
+        /// while the transient system keeps their symbols, so a consumer needs to know which symbols
+        /// are in the equations it is about to run and what each of them started at.
+        /// </remarks>
+        public IEnumerable<LiveParameter> Parameters { get { return parameters; } }
+
+        /// <summary>
+        ///
         /// </summary>
         /// <param name="TimeStep">Describes the timestep of the solution.</param>
         /// <param name="Solutions">Enumeration of SolutionSets describing the unknowns solved by this solution.</param>
@@ -43,12 +58,21 @@ namespace Circuit
         public TransientSolution(
             Expression TimeStep,
             IEnumerable<SolutionSet> Solutions,
-            IEnumerable<Arrow> InitialConditions)
+            IEnumerable<Arrow> InitialConditions,
+            IEnumerable<LiveParameter> Parameters)
         {
             h = TimeStep;
             solutions = Solutions.Buffer();
             initialConditions = InitialConditions.Buffer();
+            parameters = Parameters.Buffer();
         }
+
+        public TransientSolution(
+            Expression TimeStep,
+            IEnumerable<SolutionSet> Solutions,
+            IEnumerable<Arrow> InitialConditions)
+            : this(TimeStep, Solutions, InitialConditions, new LiveParameter[] { })
+        { }
 
         /// <summary>
         /// Check if any of the SolutionSets in this solution depend on x.
@@ -125,12 +149,35 @@ namespace Circuit
             LogExpressions(Log, MessageType.Verbose, "Initial conditions from analysis:", Analysis.InitialConditions);
 
             SystemOfEquations dc = new SystemOfEquations(mna
+                // Live parameters are numbers here and symbols in the transient system below. That
+                // asymmetry is deliberate and is what makes a live parameter affordable at all. The
+                // steady state is found by NSolve, a numerical routine, so a free symbol in this
+                // system is not something it can carry — it would have to solve for the operating
+                // point as a function of every knob, which is neither cheap nor what is wanted. The
+                // operating point a simulation starts from is the one belonging to the circuit as it
+                // was loaded, which is the state it is in, and turning a knob afterwards moves the
+                // circuit away from that point through the transient equations exactly as turning a
+                // real one does.
+                .Substitute(Analysis.BakedParameters)
                 // Derivatives, t, and T are zero in the steady state.
                 .Substitute(dy_dt.Select(i => Arrow.New(i, 0)).Append(Arrow.New(t, 0), Arrow.New(T, 0), SinglePoleSwitch.IncludeOpen))
                 // Use the initial conditions from analysis.
                 .Substitute(Analysis.InitialConditions)
                 // Evaluate variables at t=0.
                 .OfType<Equal>(), y.Select(j => j.Substitute(t, 0)));
+
+            // A parameter that survived the substitution above would reach NSolve as an unknown it
+            // was never given, and what NSolve does then is find a root of a system that is missing
+            // an equation — a plausible number that is not the circuit's operating point. Caught
+            // here, where the cause is one line away, rather than left to be discovered as a bias
+            // point that is wrong in the fourth digit.
+            Expression[] symbols = Analysis.Parameters.Select(i => (Expression)i.Symbol).ToArray();
+            if (symbols.Any() && dc.DependsOn(symbols))
+            {
+                throw new Exception(
+                    "The steady-state system still depends on a live parameter after substituting " +
+                    "every one of them. It cannot be solved numerically in that state.");
+            }
 
             // Solve partitions independently.
             foreach (SystemOfEquations i in dc.Partition())
@@ -151,10 +198,33 @@ namespace Circuit
             // Transient analysis of the system.
             Log.WriteLine(MessageType.Info, "Performing transient analysis...");
 
+            // What the row reduction should use to judge the size of a pivot it cannot evaluate.
+            //
+            // SystemOfEquations picks pivots by magnitude, and scores anything that is not a number
+            // as zero. That is a sound default for a Newton system, whose entries depend on the
+            // unknowns and have no size until the simulation runs. It is badly wrong for a live
+            // parameter, which has a perfectly good size — the value the circuit was analyzed at —
+            // and it does not merely mean the pivots are chosen arbitrarily: a numeric entry of
+            // 1e-30 outscores a symbolic entry worth 1e6, so the elimination actively prefers the
+            // worse pivot and then divides by it. Milestone A4 found every circuit with a
+            // potentiometer diverging within one block for this reason, including passive tone
+            // stacks whose behaviour is a linear recurrence and cannot go unstable on its own.
+            //
+            // PivotConditions is the mechanism SystemOfEquations already provides for exactly this,
+            // and nothing had ever passed it. Given the parameters' analyzed values, a symbolic
+            // entry scores its true magnitude at that operating point, which is the same number the
+            // baked solve scores, so the two choose the same pivots.
+            //
+            // Null rather than an empty list when there is nothing to substitute, so that a circuit
+            // with no live parameters takes a code path that provably cannot differ from the one it
+            // took before this milestone.
+            List<Arrow> pivotConditions = Analysis.BakedParameters.ToList();
+            IEnumerable<Arrow> pivots = pivotConditions.Count > 0 ? pivotConditions : null;
+
             SystemOfEquations system = new SystemOfEquations(mna.Substitute(SinglePoleSwitch.ExcludeOpen).OfType<Equal>(), dy_dt.Concat(y));
 
             // Solve the diff eq for dy/dt and integrate the results.
-            system.RowReduce(dy_dt);
+            system.RowReduce(dy_dt, PivotConditions: pivots);
             system.BackSubstitute(dy_dt);
             LogExpressions(Log, MessageType.Verbose, "Differential equations:", system.Where(i => i.DependsOn(dy_dt)).Select(i => Equal.New(i, 0)));
             IEnumerable<Equal> integrated = system.Solve(dy_dt)
@@ -176,7 +246,7 @@ namespace Circuit
             {
                 Log.WriteLine(MessageType.Verbose, "Partition unknowns: {0}", String.Join(", ", F.Unknowns));
                 // Find linear solutions for y. Linear systems should be completely solved here.
-                F.RowReduce();
+                F.RowReduce(PivotConditions: pivots);
                 IEnumerable<Arrow> linear = F.Solve();
                 if (linear.Any())
                 {
@@ -200,8 +270,8 @@ namespace Circuit
                     // ly is the subset of y that can be found linearly.
                     List<Expression> ly = dy.Where(j => !nonlinear.Any(i => i[j].DependsOn(NewtonIteration.DeltaOf(j)))).ToList();
 
-                    // Find linear solutions for dy. 
-                    nonlinear.RowReduce(ly);
+                    // Find linear solutions for dy.
+                    nonlinear.RowReduce(ly, PivotConditions: pivots);
                     IEnumerable<Arrow> solved = nonlinear.Solve(ly);
                     solved = Factor(solved);
 
@@ -229,7 +299,8 @@ namespace Circuit
             return new TransientSolution(
                 h,
                 solutions,
-                initial);
+                initial,
+                Analysis.Parameters);
         }
         public static TransientSolution Solve(Analysis Analysis, Expression TimeStep, ILog Log) { return Solve(Analysis, TimeStep, new Arrow[] { }, Log); }
         public static TransientSolution Solve(Analysis Analysis, Expression TimeStep) { return Solve(Analysis, TimeStep, new Arrow[] { }, new NullLog()); }

@@ -76,9 +76,15 @@ namespace Circuit
             Mna.PopContext();
         }
 
-        public Analysis Analyze()
+        public Analysis Analyze() { return Analyze(null); }
+
+        /// <param name="Options">
+        /// What this analysis may leave symbolic. Null takes the defaults, under which component
+        /// values a player might change while playing stay symbolic. See <see cref="AnalysisOptions"/>.
+        /// </param>
+        public Analysis Analyze(AnalysisOptions Options)
         {
-            Analysis mna = new Analysis();
+            Analysis mna = new Analysis(Options);
             mna.PushContext(null, Nodes);
             foreach (Component c in Components)
                 c.Analyze(mna);
