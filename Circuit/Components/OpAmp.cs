@@ -73,8 +73,21 @@ namespace Circuit
                 Diode.Analyze(Mna, nee, pp1, 8e-16, 1);
             }
 
-            // Output current is buffered.
-            Mna.AddTerminal(Out, (pp1.V - Out.V) / Rout);
+            // Output current is buffered: a Thevenin source of open-circuit voltage pp1 behind a
+            // series Rout, with the buffer rather than the pole node supplying the current, which is
+            // why nothing is added back at pp1.
+            //
+            // The sign is the one Analysis uses everywhere else. AddTerminal adds its current to the
+            // node's Kirchhoff sum, and that sum is of currents *leaving* the node: Resistor.Analyze
+            // adds (Anode.V - Cathode.V)/R at the anode, and AddPassiveComponent negates it at the
+            // cathode. A source of voltage pp1 behind Rout therefore draws (Out - pp1)/Rout out of
+            // Out. This stood the other way round until Stompbench's referee measured it, which made
+            // the stage present a *negative* output resistance of -Rout. With Aol = 1e6 the feedback
+            // swamps it at DC and in any level measurement, so it hid as a phase error of about a
+            // part in ten thousand at 1 kHz; the clipping in a distortion circuit then converts that
+            // into a shift in when the output flips, worth 15 per cent of peak on the diode clipper.
+            // See docs/stompbench-a2.75-result.md in the Stompbench repository.
+            Mna.AddTerminal(Out, (Out.V - pp1.V) / Rout);
 
             Mna.PopContext();
         }

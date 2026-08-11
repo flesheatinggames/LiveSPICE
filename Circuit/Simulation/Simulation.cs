@@ -110,6 +110,47 @@ namespace Circuit
         public int Iterations { get { return iterations; } set { iterations = value; InvalidateProcess(); } }
 
         /// <summary>
+        /// When Newton's method is close enough to stop. The loop ends once every unknown's
+        /// remaining correction satisfies |dv| &lt; |v|*ConvergenceRelative + ConvergenceAbsolute.
+        /// </summary>
+        /// <remarks>
+        /// Tightened from 1e-4 / 1e-6 by Stompbench milestone A2.75, which swept both numbers across
+        /// eight decades and measured what each setting bought and cost.
+        ///
+        /// The test is on the size of the last *correction* rather than on the error, and Newton
+        /// converges quadratically, so the two are not the same thing: at the old 1e-4 the error left
+        /// in the answer was already about 1e-8 relative on most circuits. That is why the referee
+        /// comparison cannot see this change at all — on every circuit it can adjudicate, its
+        /// disagreement with ngspice and the rate that disagreement falls at are unmoved to five
+        /// significant figures across the whole sweep.
+        ///
+        /// What justifies the change is one circuit where the old threshold was the limiting error.
+        /// Measured against the same render solved six decades tighter, the precision rectifier at
+        /// 1e-4 sat 5.16e-4 V from the converged answer, 5.2e-3 of its peak; the common emitter sat
+        /// 1.6e-9 V away and the diode clipper 2.8e-8 V. At the values below the rectifier is
+        /// 3.29e-7 V away, 3.3e-6 of peak, which is below what twenty-four-bit audio represents, and
+        /// the other two are at 1.1e-12 V and 3.2e-12 V. The stopping test is no longer what bounds
+        /// any of them.
+        ///
+        /// The price is real and was measured rather than estimated: about one more iteration per
+        /// solve, and on the five circuits milestone A0 timed, between 0.5 and 5.7 points more of the
+        /// buffer period at eight times oversampling — the worst being the Big Muff Pi, whose median
+        /// share goes from 25.9 to 31.6 per cent. Two further decades were measured and rejected:
+        /// 1e-8 / 1e-10 costs 10.4 points on that circuit and buys accuracy nothing downstream can
+        /// resolve.
+        ///
+        /// These two numbers are written out four times — here, in the Rust interpreter, in the
+        /// Cranelift emitter and in the third-implementation referee — and the four are gated against
+        /// each other bit for bit, so they have to move together or `emitspike verify` reports the
+        /// difference. They are deliberately not a settable property: only this generator could be
+        /// turned, and turning it would silently break that gate.
+        /// </remarks>
+        public const double ConvergenceRelative = 1e-6;
+
+        /// <summary>See <see cref="ConvergenceRelative"/>.</summary>
+        public const double ConvergenceAbsolute = 1e-8;
+
+        /// <summary>
         /// How the generated code treats subexpressions computed inside Newton's method.
         /// </summary>
         /// <remarks>
@@ -173,12 +214,29 @@ namespace Circuit
 
         // Diagnostic counters. Written only by generated code, and only when Diagnostics is set.
         private GlobalExpr<long> newtonSteps = new GlobalExpr<long>(0);
+        private GlobalExpr<long> newtonIterations = new GlobalExpr<long>(0);
         private GlobalExpr<long> exhaustedSteps = new GlobalExpr<long>(0);
         private GlobalExpr<double> worstFinalDelta = new GlobalExpr<double>(0.0);
         private GlobalExpr<double> worstResidual = new GlobalExpr<double>(0.0);
 
         /// <summary>Newton solves performed, counting one per solution set per simulation step.</summary>
         public long NewtonSteps { get { return newtonSteps.Value; } }
+
+        /// <summary>
+        /// Passes through the Newton loop's body, summed over every solve in the simulation.
+        /// Divided by <see cref="NewtonSteps"/> it is the average iterations a solve took.
+        /// </summary>
+        /// <remarks>
+        /// Added for Stompbench milestone A2.75, which tightens the convergence threshold below and
+        /// therefore has to be able to say what that costs. Nothing here counted iterations before:
+        /// <see cref="NewtonSteps"/> counts solves, one per solution set per timestep, so a change
+        /// that makes every solve take two more iterations leaves all four of the other counters
+        /// exactly where they were.
+        ///
+        /// Counted at the top of the body rather than at the bottom, so a solve that converges on
+        /// its first pass is counted as one iteration rather than as none.
+        /// </remarks>
+        public long NewtonIterations { get { return newtonIterations.Value; } }
 
         /// <summary>
         /// Newton solves that used the whole iteration budget without meeting the convergence test.
@@ -209,6 +267,7 @@ namespace Circuit
         public void ResetDiagnostics()
         {
             newtonSteps.Value = 0;
+            newtonIterations.Value = 0;
             exhaustedSteps.Value = 0;
             worstFinalDelta.Value = 0.0;
             worstResidual.Value = 0.0;
@@ -477,6 +536,11 @@ namespace Circuit
                                 // do { ... --it } while(it > 0)
                                 code.DoWhile((Break) =>
                                 {
+                                    // ++iterations. At the top of the body rather than the bottom,
+                                    // so a solve that converges on its first pass counts as one.
+                                    if (diagnostics)
+                                        code.Add(LinqExpr.AddAssign(newtonIterations, LinqExpr.Constant(1L)));
+
                                     // Solve the un-solved system.
                                     Solve(code, JxF, S.Equations, S.UnknownDeltas, residual);
 
@@ -495,8 +559,8 @@ namespace Circuit
                                         LinqExpr v = code[i];
                                         LinqExpr dv = code[NewtonIteration.Delta(i)];
 
-                                        // done &= (|dv| < |v|*epsilon)
-                                        code.Add(LinqExpr.AndAssign(done, LinqExpr.LessThan(Abs(dv), MultiplyAdd(Abs(v), LinqExpr.Constant(1e-4), LinqExpr.Constant(1e-6)))));
+                                        // done &= (|dv| < |v|*relative + absolute). See ConvergenceRelative.
+                                        code.Add(LinqExpr.AndAssign(done, LinqExpr.LessThan(Abs(dv), MultiplyAdd(Abs(v), LinqExpr.Constant(ConvergenceRelative), LinqExpr.Constant(ConvergenceAbsolute)))));
                                         if (diagnostics)
                                             code.Add(LinqExpr.Assign(finalDelta, Max(finalDelta, Abs(dv))));
                                         // v += dv
@@ -543,6 +607,9 @@ namespace Circuit
                                         LinqExpr.AddAssign(exhaustedSteps, LinqExpr.Constant(1L))));
                                     code.Add(LinqExpr.Assign(worstResidual, Max(worstResidual, residual)));
                                     code.Add(LinqExpr.Assign(worstFinalDelta, Max(worstFinalDelta, finalDelta)));
+                                    // The iteration counter is incremented at the top of the body
+                                    // rather than here, because a solve that breaks out never
+                                    // reaches the bottom of it.
                                 }
                             }
                         }
