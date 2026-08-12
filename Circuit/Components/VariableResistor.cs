@@ -80,7 +80,7 @@ namespace Circuit
 
         public override void Analyze(Analysis Mna)
         {
-            if (!Mna.LiveParameters)
+            if (!Mna.IsLive(Name))
             {
                 // Exactly what this component did before Stompbench milestone A4.
                 Resistor.Analyze(Mna, Name, Anode, Cathode, (Expression)Resistance * AdjustWipe(wipe, sweep));

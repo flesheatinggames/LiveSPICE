@@ -64,7 +64,7 @@ namespace Circuit
 
         public override void Analyze(Analysis Mna)
         {
-            if (!Mna.LiveParameters)
+            if (!Mna.IsLive(Name))
             {
                 // Exactly what this component did before Stompbench milestone A4: the wiper is a
                 // number, so both resistances are numbers and the algebra folds them exactly.

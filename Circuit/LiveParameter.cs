@@ -77,7 +77,8 @@ namespace Circuit
             double Position,
             Func<double, double> Map,
             double Minimum,
-            double Maximum)
+            double Maximum,
+            double? Value = null)
         {
             this.Name = Name;
             this.Component = Component;
@@ -87,7 +88,11 @@ namespace Circuit
             this.Minimum = Minimum;
             this.Maximum = Maximum;
             Symbol = Variable.New(Name);
-            Value = Map(Position);
+            // Map of Position unless the component knew the value exactly. A control mapping need
+            // not be invertible in floating point — the saturation current's takes a base-ten
+            // logarithm and then a power of ten, which returns a number a few bits from the one it
+            // started at — and the value a circuit was analyzed at has to be the value it had.
+            this.Value = Value ?? Map(Position);
         }
 
         /// <summary>The substitution that puts this parameter's analyzed value back into a system.</summary>
