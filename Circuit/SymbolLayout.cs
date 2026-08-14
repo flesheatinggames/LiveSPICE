@@ -228,14 +228,21 @@ namespace Circuit
             DrawLine(Type, (Point)x2, new Point(x2.x - dx.x - dy.x, x2.y - dx.y - dy.y));
         }
         public void DrawArrow(EdgeType Type, Coord x1, Coord x2, double dh) { DrawArrow(Type, x1, x2, dh, dh); }
+        // Six units across rather than three, which is upstream's size. A plus three units wide,
+        // stroked at the weight the rest of a symbol is stroked at, is very nearly square and reads
+        // as a dot rather than as a sign — which is what it looked like on the first schematic drawn
+        // from these layouts at a size somebody could see. Six is still small against a forty-unit
+        // op-amp and it clears every terminal that sits beside one.
+        private const double SignArm = 3.0;
+
         public void DrawPositive(EdgeType Type, Coord x)
         {
-            DrawLine(Type, new Point(x.x - 1.5, x.y), new Point(x.x + 1.5, x.y));
-            DrawLine(Type, new Point(x.x, x.y - 1.5), new Point(x.x, x.y + 1.5));
+            DrawLine(Type, new Point(x.x - SignArm, x.y), new Point(x.x + SignArm, x.y));
+            DrawLine(Type, new Point(x.x, x.y - SignArm), new Point(x.x, x.y + SignArm));
         }
         public void DrawNegative(EdgeType Type, Coord x)
         {
-            DrawLine(Type, new Point(x.x - 1.5, x.y), new Point(x.x + 1.5, x.y));
+            DrawLine(Type, new Point(x.x - SignArm, x.y), new Point(x.x + SignArm, x.y));
         }
 
         // Add a parametric function to the schematic.
