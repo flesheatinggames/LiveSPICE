@@ -1,4 +1,5 @@
 ﻿using ComputerAlgebra;
+using System;
 using System.ComponentModel;
 
 namespace Circuit
@@ -31,7 +32,33 @@ namespace Circuit
         }
         public static Expression Analyze(Analysis Mna, Node Anode, Node Cathode, Expression C) { return Analyze(Mna, Mna.AnonymousName(), Anode, Cathode, C); }
 
-        public override void Analyze(Analysis Mna) { Analyze(Mna, Name, Anode, Cathode, Capacitance); }
+        public override void Analyze(Analysis Mna)
+        {
+            // Named only, for the reason given at Resistor.Analyze: a circuit has dozens of these
+            // and what a live value costs compounds with how many there are.
+            if (!Mna.IsNamedLive(Name))
+            {
+                Analyze(Mna, Name, Anode, Cathode, Capacitance);
+                return;
+            }
+
+            // The capacitance is a plain coefficient on a derivative, so unlike a resistance it
+            // needs no reformulation to stay cheap symbolically — i = C*dV/dt is already linear in
+            // C. What it does need is saying out loud: the discretisation puts C on the stored
+            // previous voltages as well as on this sample's, so a value that changes between two
+            // samples changes the weight given to charge that is already there. Physically the
+            // stored quantity is Q = CV, and swapping a capacitor for a different one while it holds
+            // charge is not something a circuit can do — you would be unsoldering it. A sweep is
+            // therefore an editing gesture rather than a physical one, and a large jump may thump.
+            // Milestone A5's crossfade is the fallback if it does, and the sweep is the thing to
+            // measure before deciding which path a capacitor edit should take.
+            double nominal = (double)Capacitance;
+            Func<double, double> capacitance = x => Resistor.Sweep(x, nominal);
+            LiveParameter.RangeOf(capacitance, out double low, out double high);
+
+            Expression C = Mna.DeclareParameter(Name, "C", 0.5, capacitance, low, high);
+            Analyze(Mna, Name, Anode, Cathode, C);
+        }
 
         protected internal override void LayoutSymbol(SymbolLayout Sym)
         {

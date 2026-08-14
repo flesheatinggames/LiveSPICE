@@ -59,7 +59,63 @@ namespace Circuit
             return i;
         }
 
-        public override void Analyze(Analysis Mna) { Analyze(Mna, Name, Anode, Cathode, Resistance); }
+        /// <summary>
+        /// How far either side of its nominal value a swept component ranges, as a factor.
+        /// </summary>
+        /// <remarks>
+        /// A decade down and a decade up, with the nominal value at the middle of the travel, and
+        /// the sweep logarithmic in between because component values are: the E12 series is
+        /// logarithmic, and a linear sweep from a tenth to ten times would spend nine tenths of its
+        /// travel above the nominal value.
+        ///
+        /// This is a policy about how far a sweep handle reaches, not a statement about where the
+        /// equations are valid. A conductance is a plain coefficient and the algebra holds for any
+        /// positive value, unlike a potentiometer's wiper, where a position of exactly zero is a
+        /// division by zero in the current through it. An interface that wants to set an absolute
+        /// value rather than a position on a handle is the natural extension, and is what the
+        /// interface–engine contract should carry.
+        /// </remarks>
+        public const double SweepDecades = 1.0;
+
+        /// <summary>
+        /// The value a sweep handle at <paramref name="position"/> asks for, given a nominal value.
+        /// </summary>
+        public static double Sweep(double position, double nominal)
+        {
+            position = Math.Min(Math.Max(position, 0.0), 1.0);
+            return nominal * Math.Pow(10.0, SweepDecades * (2.0 * position - 1.0));
+        }
+
+        public override void Analyze(Analysis Mna)
+        {
+            // Named only, never by default, and this is the whole reason a plain resistor asks
+            // IsNamedLive where a potentiometer asks IsLive. A knob is drawn on the schematic as
+            // adjustable and there are a handful of them; a resistor is not, and a circuit has
+            // dozens. What a live value costs compounds with how many there are — milestone A4
+            // measured a second live knob at up to thirty-one times the first — so a default that
+            // made every resistor symbolic would not be a slower solve, it would be no solve at all.
+            //
+            // What this is for is the sweep handle of requirements §33: the interface names the one
+            // component whose label is being dragged, pays one solve for it, and every value the
+            // drag passes through afterwards is a memory write.
+            if (!Mna.IsNamedLive(Name))
+            {
+                Analyze(Mna, Name, Anode, Cathode, Resistance);
+                return;
+            }
+
+            // A conductance rather than a resistance, for the reason given in AnalyzeConductance:
+            // modified nodal analysis is linear in one and not the other, and the difference only
+            // shows once the value is a symbol.
+            double nominal = (double)Resistance;
+            Func<double, double> conductance = x => 1.0 / Sweep(x, nominal);
+            LiveParameter.RangeOf(conductance, out double low, out double high);
+
+            // Half way along the handle is the value the schematic says, so a circuit nobody sweeps
+            // is the circuit that was drawn.
+            Expression G = Mna.DeclareParameter(Name, "G", 0.5, conductance, low, high);
+            AnalyzeConductance(Mna, Name, Anode, Cathode, G);
+        }
 
         public static void Draw(SymbolLayout Sym, double x, double y1, double y2, int N, double Scale)
         {
