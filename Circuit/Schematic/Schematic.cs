@@ -144,6 +144,27 @@ namespace Circuit
         public Circuit Build() { return Build(log); }
 
         /// <summary>
+        /// Rebuild the node graph from the geometry, with none of Build's side effects.
+        /// </summary>
+        /// <remarks>
+        /// Stompbench divergence. The incremental maintenance in OnLayoutChanged rebuilds only the
+        /// nodes it is handed plus the wires that have none, so a wire added or moved so that it
+        /// bridges two existing nets does not merge them: the geometry says one net and the node
+        /// graph still says two. That is invisible while a schematic is only ever loaded and built,
+        /// and it is not invisible in an editor, where the node count creeps upward as you draw and
+        /// a probe resolves to a node that is no longer the whole net.
+        ///
+        /// Build already does exactly this and then invents a node for every unconnected terminal,
+        /// which is a side effect an editor cannot have: validating after every edit would
+        /// accumulate nodes that are not in the drawing. This is the first half on its own.
+        /// </remarks>
+        public void Reconnect()
+        {
+            RebuildNodes();
+            ReconnectAllTerminals();
+        }
+
+        /// <summary>
         /// Get the terminals located at x.
         /// </summary>
         /// <param name="x"></param>
