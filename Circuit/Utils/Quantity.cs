@@ -125,6 +125,21 @@ namespace Circuit
         };
         private static int MinPrefix = Prefixes.Values.Min();
         private static int MaxPrefix = Prefixes.Values.Max();
+
+        /// <summary>
+        /// The metric prefixes this class knows, smallest first, with the plain one in the middle.
+        /// </summary>
+        /// <remarks>
+        /// Added for Stompbench, which puts the prefix on a pair of steppers beside a component's
+        /// value instead of asking somebody to type one. A stepper has to know which prefixes exist
+        /// and in what order, and a second list written above this one would be a second list to
+        /// keep in step with the table <see cref="ToString(Expression, Units, string, IFormatProvider)"/>
+        /// renders from.
+        /// </remarks>
+        public static IEnumerable<string> PrefixNames
+        {
+            get { return Prefixes.OrderBy(i => i.Value).Select(i => i.Key); }
+        }
         private static string DeAliasPrefix(string Prefix)
         {
             switch (Prefix)
