@@ -189,9 +189,15 @@ namespace Circuit
                     initial.AddRange(part);
                     LogExpressions(Log, MessageType.Verbose, "Initial conditions:", part); 
                 }
-                catch (Exception)
+                catch (Exception Ex)
                 {
-                    Log.WriteLine(MessageType.Warning, "Failed to find partition initial conditions, simulation may be unstable.");
+                    // <b>The message, rather than only the fact.</b> This used to say a partition had
+                    // failed and nothing about why, which makes the one circuit somebody is looking
+                    // at the one circuit the log cannot help with: "did not converge" and "the
+                    // matrix is singular" are different problems with different fixes, and telling
+                    // them apart meant editing the core and rebuilding.
+                    Log.WriteLine(MessageType.Warning,
+                        "Failed to find partition initial conditions, simulation may be unstable: " + Ex.Message);
                 }
             }
 

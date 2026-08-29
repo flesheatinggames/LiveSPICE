@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Library>
+	<!--
+	    Optocouplers, as the design reference names them.
+
+	    Ron and Roff are the two ends of each part's useful range, which is what a data sheet quotes
+	    and what the prototype lists: Roff is the cell's resistance at low drive rather than a true
+	    dark resistance, which for a real cell is megohms and is reached only after minutes.
+
+	    Rise is the prototype's own lag figure. Fall is not in the prototype, and it is the reason
+	    these parts sound like anything: a photoresistor returns roughly an order of magnitude more
+	    slowly than it brightens, and a single time constant would be a device with its character
+	    removed. The ratios below are ten to one except for the VTL5C4, which is the slow-decay part
+	    of the family and is the reason anyone chooses it.
+	-->
+	<Component _Type="Circuit.Vactrol, Circuit, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+			   Ron="6 kΩ" Roff="38 kΩ" Rise="3 ms" Fall="30 ms" IRef="1 mA" Gamma="0.9"
+			   Name="U1" PartNumber="VTL5C1" Description="Fast optocoupler: 3 ms brightening, 30 ms returning, 6 kΩ to 38 kΩ" />
+	<Component _Type="Circuit.Vactrol, Circuit, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+			   Ron="4 kΩ" Roff="50 kΩ" Rise="8 ms" Fall="80 ms" IRef="1 mA" Gamma="0.9"
+			   Name="U1" PartNumber="VTL5C3" Description="The usual optocoupler: 8 ms brightening, 80 ms returning, 4 kΩ to 50 kΩ" />
+	<Component _Type="Circuit.Vactrol, Circuit, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+			   Ron="2 kΩ" Roff="90 kΩ" Rise="12 ms" Fall="140 ms" IRef="1 mA" Gamma="0.9"
+			   Name="U1" PartNumber="NSL-32" Description="Wide-range optocoupler: 12 ms brightening, 140 ms returning, 2 kΩ to 90 kΩ" />
+	<Component _Type="Circuit.Vactrol, Circuit, Version=1.0.0.0, Culture=neutral, PublicKeyToken=null"
+			   Ron="3 kΩ" Roff="70 kΩ" Rise="22 ms" Fall="400 ms" IRef="1 mA" Gamma="0.9"
+			   Name="U1" PartNumber="VTL5C4" Description="Slow-decay optocoupler: 22 ms brightening, 400 ms returning, 3 kΩ to 70 kΩ" />
+</Library>

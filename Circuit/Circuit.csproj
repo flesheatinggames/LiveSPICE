@@ -20,6 +20,13 @@
     <Content Include="Components\Tubes.xml">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
+    <!-- Copied to the output like Tubes.xml rather than left behind like the other three, because a
+         build that ships without its checkout has to be able to find it. Stompbench's DeviceLibrary
+         looks in the checked-out core first and beside the assembly second, so a development build
+         finds this either way; a packaged one finds it only here. -->
+    <Content Include="Components\Vactrols.xml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
   </ItemGroup>
   <ItemGroup>
     <PackageReference Include="Microsoft.CSharp" Version="4.7.0" />
