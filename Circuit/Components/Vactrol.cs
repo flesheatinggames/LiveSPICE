@@ -149,36 +149,44 @@ namespace Circuit
             Mna.AddPassiveComponent(Cell1, Cell2, (Cell1.V - Cell2.V) * g);
         }
 
+        /// <summary>
+        /// The package, with a diode and a cell inside it and two arrows of light between them.
+        /// </summary>
+        /// <remarks>
+        /// <b>Sixty units across rather than forty, which is wider than anything else here.</b> Three
+        /// things have to fit side by side and be told apart — a diode, the light, and a resistor —
+        /// and at the ordinary width they overlapped into a smudge that read as none of them. The
+        /// name and the part number go above and below rather than beside, for the same reason: the
+        /// sides are where the terminals are.
+        /// </remarks>
         protected internal override void LayoutSymbol(SymbolLayout Sym)
         {
-            Sym.AddTerminal(anode, new Coord(-20, 20), new Coord(-10, 20));
-            Sym.AddTerminal(cathode, new Coord(-20, -20), new Coord(-10, -20));
-            Sym.AddTerminal(cell1, new Coord(20, 20), new Coord(10, 20));
-            Sym.AddTerminal(cell2, new Coord(20, -20), new Coord(10, -20));
+            Sym.AddTerminal(anode, new Coord(-30, 20), new Coord(-16, 20));
+            Sym.AddTerminal(cathode, new Coord(-30, -20), new Coord(-16, -20));
+            Sym.AddTerminal(cell1, new Coord(30, 20), new Coord(16, 20));
+            Sym.AddTerminal(cell2, new Coord(30, -20), new Coord(16, -20));
 
-            // The package, with the two halves inside it and nothing joining them but light.
-            Sym.AddRectangle(EdgeType.Black, new Coord(-14, -24), new Coord(14, 24));
+            Sym.AddRectangle(EdgeType.Black, new Coord(-24, -26), new Coord(24, 26));
 
-            // The LED: a triangle pointing at its bar, drawn as three lines because the flattener
-            // the interface draws from understands lines, rectangles and ellipses.
-            Sym.AddWire(anode, new Coord(-10, 8));
-            Sym.AddWire(cathode, new Coord(-10, -8));
-            Sym.DrawLine(EdgeType.Black, new Coord(-14, 8), new Coord(-6, 8));
-            Sym.DrawLine(EdgeType.Black, new Coord(-14, 8), new Coord(-10, -4));
-            Sym.DrawLine(EdgeType.Black, new Coord(-6, 8), new Coord(-10, -4));
-            Sym.DrawLine(EdgeType.Black, new Coord(-14, -4), new Coord(-6, -4));
+            // The diode: a triangle from the anode side onto its bar.
+            Sym.AddWire(anode, new Coord(-16, 20), new Coord(-16, 6));
+            Sym.AddWire(cathode, new Coord(-16, -20), new Coord(-16, -6));
+            Sym.DrawLine(EdgeType.Black, new Coord(-22, 6), new Coord(-10, 6));
+            Sym.DrawLine(EdgeType.Black, new Coord(-22, 6), new Coord(-16, -6));
+            Sym.DrawLine(EdgeType.Black, new Coord(-10, 6), new Coord(-16, -6));
+            Sym.DrawLine(EdgeType.Black, new Coord(-22, -6), new Coord(-10, -6));
 
-            // The two arrows of light, pointing from the diode at the cell.
-            Sym.DrawArrow(EdgeType.Black, new Coord(-4, 4), new Coord(4, 8), 0.25, 0.2);
-            Sym.DrawArrow(EdgeType.Black, new Coord(-4, -2), new Coord(4, 2), 0.25, 0.2);
+            // The light, which is the only thing crossing between the two halves.
+            Sym.DrawArrow(EdgeType.Black, new Coord(-6, 4), new Coord(4, 4), 0.3, 0.25);
+            Sym.DrawArrow(EdgeType.Black, new Coord(-6, -4), new Coord(4, -4), 0.3, 0.25);
 
-            // The cell: a resistor body, which is what a photoresistor is drawn as.
-            Sym.AddWire(cell1, new Coord(10, 8));
-            Sym.AddWire(cell2, new Coord(10, -8));
-            Sym.AddRectangle(EdgeType.Black, new Coord(6, -8), new Coord(14, 8));
+            // The cell, drawn as the resistor it is.
+            Sym.AddWire(cell1, new Coord(16, 20), new Coord(16, 8));
+            Sym.AddWire(cell2, new Coord(16, -20), new Coord(16, -8));
+            Sym.AddRectangle(EdgeType.Black, new Coord(10, -8), new Coord(22, 8));
 
-            Sym.DrawText(() => Name, new Coord(16, 24), Alignment.Near, Alignment.Far);
-            Sym.DrawText(() => PartNumber, new Coord(16, -24), Alignment.Near, Alignment.Near);
+            Sym.DrawText(() => Name, new Coord(0, 30), Alignment.Center, Alignment.Near);
+            Sym.DrawText(() => PartNumber, new Coord(0, -30), Alignment.Center, Alignment.Far);
         }
     }
 }
