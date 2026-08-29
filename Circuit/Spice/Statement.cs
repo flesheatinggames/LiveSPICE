@@ -1,6 +1,7 @@
 ﻿using ComputerAlgebra;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Text.RegularExpressions;
 
 namespace Circuit.Spice
@@ -21,13 +22,30 @@ namespace Circuit.Spice
             { "T", 1e+12 },
         };
 
-        private static readonly Regex Quantity = new Regex(@"([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)(F|P|N|U|M|K|MEG|G|T)?.*", RegexOptions.IgnoreCase);
+        /// <summary>
+        /// A number with an optional SPICE metric suffix on it.
+        /// </summary>
+        /// <remarks>
+        /// <b>MEG comes first in the alternation, and that is the whole of a nine-order-of-magnitude
+        /// bug.</b> .NET tries the branches of an alternation left to right and takes the first that
+        /// lets the rest of the pattern succeed, and the rest of this pattern is ".*", which succeeds
+        /// against anything. So with M before MEG the string "10MEG" matched M, the ".*" swallowed the
+        /// "EG", and a ten-megohm resistor imported as ten milliohms. MEG was unreachable: no input
+        /// could ever reach that branch. Longest first is the fix, and it costs nothing — "10M" tries
+        /// MEG, fails for want of the EG, and falls through to M as it always did.
+        ///
+        /// The number is parsed in the invariant culture rather than the machine's, for the reason
+        /// Expression.Parse and Real.Parse both record: this is a figure out of a vendor's model file
+        /// rather than something a person typed, and under a comma-decimal locale "2.52" would
+        /// otherwise read as two hundred and fifty-two.
+        /// </remarks>
+        private static readonly Regex Quantity = new Regex(@"([-+]?[0-9]*\.?[0-9]+([eE][-+]?[0-9]+)?)(MEG|F|P|N|U|M|K|G|T)?.*", RegexOptions.IgnoreCase);
         public static Expression ParseValue(string s)
         {
             Match m = Quantity.Match(s);
             if (m.Success)
             {
-                double v = double.Parse(m.Groups[1].Value);
+                double v = double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture);
                 double p = 1;
                 if (m.Groups[3].Success)
                     p = Prefixes[m.Groups[3].Value.ToUpper()];

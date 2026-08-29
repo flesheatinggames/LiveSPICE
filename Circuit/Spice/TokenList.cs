@@ -43,13 +43,29 @@ namespace Circuit.Spice
             }
         }
 
+        /// <summary>
+        /// One logical line: a line, plus every continuation line that follows it.
+        /// </summary>
+        /// <remarks>
+        /// <b>ReadLine answers null at the end of the stream, and this used to call TrimEnd on it.</b>
+        /// A file whose last line is a "+" continuation reaches exactly that: Peek sees the "+", the
+        /// loop goes round, and there is nothing left to read. The null reference that followed came
+        /// from here rather than from the statement being parsed, so it escaped through
+        /// Statements.Parse's own loop rather than being caught by the try inside it — which meant a
+        /// truncated file produced a crash with no line number on it rather than a logged error.
+        /// Ending the loop instead lets the statement read so far be parsed and reported like any
+        /// other.
+        /// </remarks>
         public static TokenList ReadLine(StreamReader Stream)
         {
             int count = 0;
             StringBuilder line = new StringBuilder("");
             do
             {
-                string l = Stream.ReadLine().TrimEnd(Whitespace);
+                string l = Stream.ReadLine();
+                if (l == null)
+                    break;
+                l = l.TrimEnd(Whitespace);
                 ++count;
                 if (l.StartsWith("+"))
                     l = l.Substring(1);

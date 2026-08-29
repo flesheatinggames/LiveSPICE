@@ -23,6 +23,20 @@ namespace Circuit
         public Specialization() : this(null) { }
         public Specialization(Component Impl) { impl = Impl; }
 
+        /// <summary>
+        /// The component this is a specialization of.
+        /// </summary>
+        /// <remarks>
+        /// <b>Here so that an imported model can be applied to an ordinary component.</b> Spice.Model
+        /// wraps whatever it parses in one of these, which is right for a palette entry — a
+        /// Specialization reports its part number as its type name, so a picker shows "1N4148" rather
+        /// than "Diode". It is wrong for anything that has to match a component already on a drawing:
+        /// a wrapped diode is not a Diode, and a type comparison against one on the canvas fails. A
+        /// caller that wants the thing itself asks for it here rather than reaching through the
+        /// serialised form for the nested element.
+        /// </remarks>
+        public Component Implementation { get { return impl; } }
+
         // Forward the interesting work to the implementation component.
         public override string Name { get { AssertImpl(); return impl.Name; } set { AssertImpl(); impl.Name = value; NotifyChanged(nameof(Name)); } }
         [Browsable(false)]
