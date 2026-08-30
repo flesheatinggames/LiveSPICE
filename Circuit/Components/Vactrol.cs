@@ -1,4 +1,5 @@
 ﻿using ComputerAlgebra;
+using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 
@@ -111,14 +112,84 @@ namespace Circuit
             Name = "U1";
         }
 
+        /// <summary>
+        /// The ranges the four live figures sweep, and why each is logarithmic.
+        /// </summary>
+        /// <remarks>
+        /// <b>These four are what tell one optocoupler from another</b>, so they are the four that
+        /// have to stay symbolic for a model swap to be a write rather than a solve. The library's
+        /// parts sit well inside each range: 2 to 6 kΩ lit, 38 to 90 kΩ at low drive, 3 to 22 ms
+        /// brightening and 30 to 400 ms returning.
+        ///
+        /// Every one is logarithmic, and for the same reason the diode's saturation current is: a
+        /// resistance and a time are both ratio quantities, where what matters is how many times
+        /// larger one is than another rather than how much larger. A linear control from 10 ms to a
+        /// second would spend nine tenths of its travel above 100 ms and put the whole VTL5C1-to-
+        /// VTL5C3 difference in the first twentieth of it.
+        /// </remarks>
+        public const double LiveRonMinimum = 1e3;
+        public const double LiveRonMaximum = 2e4;
+        public const double LiveRoffMinimum = 2e4;
+        public const double LiveRoffMaximum = 5e5;
+        public const double LiveRiseMinimum = 1e-3;
+        public const double LiveRiseMaximum = 5e-2;
+        public const double LiveFallMinimum = 1e-2;
+        public const double LiveFallMaximum = 1.0;
+
+        /// <summary>Where on a 0-to-1 control a value sits, on a logarithmic range.</summary>
+        public static double PositionOf(double value, double minimum, double maximum)
+        {
+            double low = Math.Log10(minimum), high = Math.Log10(maximum);
+            double at = (Math.Log10(Math.Max(minimum, Math.Min(maximum, value))) - low) / (high - low);
+            return Math.Max(0, Math.Min(1, at));
+        }
+
+        /// <summary>What a 0-to-1 control position means on a logarithmic range.</summary>
+        public static double ValueAt(double position, double minimum, double maximum)
+        {
+            double low = Math.Log10(minimum), high = Math.Log10(maximum);
+            return Math.Pow(10, low + (high - low) * Math.Max(0, Math.Min(1, position)));
+        }
+
         public override void Analyze(Analysis Mna)
         {
+            // <b>All four stay symbolic when this part is named live, and all four are affordable.</b>
+            // What decides whether a live value is cheap is not what it is but where it lands: a
+            // potentiometer's wiper enters the rows the symbolic elimination reduces, so each one
+            // ends up in the denominator of everything below it, while a diode's constants reach the
+            // equations inside an exponential and land in the Newton Jacobian instead. These four are
+            // the second kind and more so — none of them appears in a matrix coefficient at all. The
+            // cell contributes (V1 − V2)·G to its two nodes, and G is the state unknown rather than
+            // any of these; Ron, Roff, Rise and Fall appear only in the two equations below.
+            //
+            // Live only when a caller names this part, which is the rule the diode follows: a knob is
+            // drawn as adjustable and a device's model constants are not, so making every one of
+            // these symbolic by default would be a larger change to what a circuit is than the flag
+            // implies.
+            bool live = Mna.IsNamedLive(Name);
+            Expression ron = Mna.DeclareParameter(
+                Name, "Ron", PositionOf((double)Ron, LiveRonMinimum, LiveRonMaximum),
+                p => ValueAt(p, LiveRonMinimum, LiveRonMaximum),
+                LiveRonMinimum, LiveRonMaximum, Value: (double)Ron, Live: live);
+            Expression roff = Mna.DeclareParameter(
+                Name, "Roff", PositionOf((double)Roff, LiveRoffMinimum, LiveRoffMaximum),
+                p => ValueAt(p, LiveRoffMinimum, LiveRoffMaximum),
+                LiveRoffMinimum, LiveRoffMaximum, Value: (double)Roff, Live: live);
+            Expression rise = Mna.DeclareParameter(
+                Name, "Rise", PositionOf((double)Rise, LiveRiseMinimum, LiveRiseMaximum),
+                p => ValueAt(p, LiveRiseMinimum, LiveRiseMaximum),
+                LiveRiseMinimum, LiveRiseMaximum, Value: (double)Rise, Live: live);
+            Expression fall = Mna.DeclareParameter(
+                Name, "Fall", PositionOf((double)Fall, LiveFallMinimum, LiveFallMaximum),
+                p => ValueAt(p, LiveFallMinimum, LiveFallMaximum),
+                LiveFallMinimum, LiveFallMaximum, Value: (double)Fall, Live: live);
+
             // The LED half is an ordinary diode, which is what it is. Its current is the only thing
             // that crosses to the other half.
             Expression iLed = Diode.Analyze(Mna, Name + "d", Anode, Cathode, IS, n);
 
-            Expression gOn = 1 / (Expression)Ron;
-            Expression gDark = 1 / (Expression)Roff;
+            Expression gOn = 1 / ron;
+            Expression gDark = 1 / roff;
 
             // <b>A smooth positive part of the LED current.</b> The power below would otherwise see a
             // negative base when the diode is reverse biased — its current is bounded below by -IS
@@ -142,7 +213,7 @@ namespace Circuit
             // differentiable. The step is 1 when the cell is brightening and 0 when it is returning.
             Expression w = gOn * Blend;
             Expression rising = (1 + drive / Call.Sqrt(drive * drive + w * w)) / 2;
-            Expression rate = (1 - rising) / (Expression)Fall + rising / (Expression)Rise;
+            Expression rate = (1 - rising) / fall + rising / rise;
             Mna.AddEquation(D(g, t), drive * rate);
 
             // The cell itself, which is a resistor whose conductance is the state above.
