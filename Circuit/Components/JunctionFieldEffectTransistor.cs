@@ -83,10 +83,44 @@ namespace Circuit
 
             Expression Vgds_t0 = Vgds - Vt0;
 
+            // <b>The two regions have to meet, and with a subtraction of one they do not.</b> This
+            // read `AbsVds * (2 * Vgds_t0 - 1)` in the linear branch: a subtraction of one volt
+            // where a subtraction of the drain-source voltage belongs. The square law is
+            // Vds*(2*Vov - Vds) below the knee and Vov^2 above it, where Vov is the gate overdrive,
+            // and the knee is at Vds = Vov, so substituting Vds = Vov into the first gives
+            // Vov*(2*Vov - Vov) = Vov^2, which is the second. That is the arithmetic that says the
+            // corrected form is right: it is not merely closer, it agrees exactly at every bias.
+            //
+            // What the shipped form gave, in units of Beta, for the default -2 V threshold:
+            //
+            //   Vgs      overdrive   shipped linear   saturation   gap
+            //    0.0 V     2.00 V         6.000          4.000     +2.000
+            //   -0.5 V     1.50 V         3.000          2.250     +0.750
+            //   -1.0 V     1.00 V         1.000          1.000      0.000
+            //   -1.5 V     0.50 V         0.000          0.250     -0.250
+            //
+            // So a JFET biased at zero gate-source voltage stepped fifty per cent in drain current
+            // as it crossed between regions, and the two branches agreed at exactly one operating
+            // point — the one where the overdrive happens to be a volt, which is what makes the
+            // slip look like an ordinary expression from far enough away.
+            //
+            // <b>Below half a volt of overdrive it was worse than a step: the current ran
+            // backwards.</b> The factor 2*Vgds_t0 - 1 goes negative once the overdrive falls below
+            // one half, so the model had the channel delivering power rather than dissipating it.
+            // That is exactly the region a JFET occupies when it is used as a voltage-controlled
+            // resistor: circuits/stock/MXR Phase 90.schx holds four of them with a -2.021 V
+            // threshold and sweeps the gate below -1.521 V on every oscillator cycle.
+            //
+            // The slope is continuous too, which is what Newton needs rather than merely what
+            // physics needs. Differentiating the linear branch in AbsVds gives 2*Vgds_t0 - 2*AbsVds,
+            // which vanishes at the knee, and the saturation branch does not depend on AbsVds at
+            // all, so both one-sided slopes are zero there. The channel-length modulation factor
+            // multiplies both branches, so it cannot break either agreement.
+            // `sbrender selftest jfet` measures both to a stated tolerance.
             Expression id = Call.Sign(Vds) * (Vgds >= Vt0) * Beta * (1 + Lambda * AbsVds) *
                 Call.If(AbsVds < Vgds_t0,
                     // Linear region.
-                    AbsVds * (2 * Vgds_t0 - 1),
+                    AbsVds * (2 * Vgds_t0 - AbsVds),
                     // Saturation region.
                     Vgds_t0 ^ 2);
 
