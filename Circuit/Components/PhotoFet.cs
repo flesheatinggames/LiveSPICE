@@ -124,6 +124,12 @@ namespace Circuit
             cathode = new Terminal(this, "K");
             channel1 = new Terminal(this, "1");
             channel2 = new Terminal(this, "2");
+            // <b>The first of the three parts on the datasheet.</b> The H11F2 and H11F3 are the
+            // same device with a higher on-resistance — 330 Ω and 470 Ω against this one's 200 — and,
+            // for the H11F3, half the breakdown voltage, so they are this component with two figures
+            // changed rather than components of their own. Which is why the bin entry is called
+            // PhotoFET and this says which one it arrives as.
+            PartNumber = "H11F1";
             Name = "U1";
         }
 

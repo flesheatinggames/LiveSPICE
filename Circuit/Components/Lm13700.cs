@@ -161,6 +161,17 @@ namespace Circuit
             positiveB = new Terminal(this, "In+ B");
             diodeB = new Terminal(this, "Dbias B");
             biasB = new Terminal(this, "IABC B");
+            // <b>The bin names a kind of device and the drawing names the chip.</b> Every entry in
+            // that bin names a kind — a resistor, a diode, an op-amp — so this one is "Transconductance
+            // amplifier", and the part number is where the vactrol already keeps its own. It matters
+            // more here than there: for a part like this the pinout is the model, and no value turns
+            // an LM13700 into a CA3080, whose pins are different.
+            //
+            // LM13700 rather than a family name, because the LM13600 shares this pinout and differs
+            // in one respect its datasheet names — its output buffers' bias currents depend on the
+            // amplifier bias current where these do not — which this model does not carry. Claiming
+            // to be both would be claiming a difference it cannot tell.
+            PartNumber = "LM13700";
             Name = "U1";
         }
 

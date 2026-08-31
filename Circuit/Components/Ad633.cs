@@ -107,6 +107,12 @@ namespace Circuit
             z = new Terminal(this, "Z");
             w = new Terminal(this, "W");
             supplyPlus = new Terminal(this, "V+");
+            // <b>The grade and the package, not just the part.</b> The datasheet gives two
+            // different pinouts for the same silicon — the eight-pin plastic dual in-line package and
+            // the eight-pin surface-mount one — and says so beside every application circuit. This
+            // model is the first of them, so the drawing says which, and somebody who places it and
+            // buys the other package is told by the symbol rather than by a breadboard.
+            PartNumber = "AD633JN";
             Name = "U1";
         }
 
