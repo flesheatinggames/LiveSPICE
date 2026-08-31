@@ -59,8 +59,12 @@ namespace Circuit
             Capacitor.Analyze(Mna, pp1, np1, 1 / (2 * Math.PI * Rp1 * GBP / Aol));
             Ground.Analyze(Mna, np1);
 
-            // Implement voltage limiter.
-            if (vcc.IsConnected && vee.IsConnected)
+            // <b>Wired rather than connected, which are different questions.</b> Schematic.Build
+            // gives every unconnected terminal a node of its own before analysis, so IsConnected is
+            // true for every pin in the drawing and this read as "always". An op-amp drawn without
+            // its rails therefore got a limiter clamping its pole node to two floating nodes, which
+            // is a subsystem the steady-state solve cannot determine. See Terminal.IsWired.
+            if (vcc.IsWired && vee.IsWired)
             {
                 Node ncc = new Node() { Name = "ncc" };
                 Node nee = new Node() { Name = "nee" };

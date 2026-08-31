@@ -198,6 +198,22 @@ namespace Circuit
                     // them apart meant editing the core and rebuilding.
                     Log.WriteLine(MessageType.Warning,
                         "Failed to find partition initial conditions, simulation may be unstable: " + Ex.Message);
+                    // <b>And, on request, the partition itself.</b> Knowing that Newton failed does
+                    // not say which of a circuit's partitions failed or what was in it, and the two
+                    // questions that matter next are exactly those: a partition of three unknowns
+                    // that will not converge is a different problem from one of forty. Stompbench
+                    // milestone C11 found an unwired output buffer contributing an exponential
+                    // between two nodes that nothing else touched — a subsystem singular in the two
+                    // voltages separately — and the equations printed here are what showed it.
+                    //
+                    // Behind an environment variable because a failing partition can be dozens of
+                    // lines and this runs inside an audio application.
+                    if (Environment.GetEnvironmentVariable("SB_PARTITION") == "1")
+                    {
+                        Log.WriteLine(MessageType.Warning, "  unknowns: " + string.Join(", ", i.Unknowns));
+                        foreach (Expression eq in i.Equations)
+                            Log.WriteLine(MessageType.Warning, "  0 == " + eq.ToString());
+                    }
                 }
             }
 
