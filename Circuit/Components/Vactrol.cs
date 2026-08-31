@@ -68,11 +68,11 @@ namespace Circuit
         public Terminal Cell2 { get { return cell2; } }
 
         private Quantity ron = new Quantity(4000m, Units.Ohm);
-        [Serialize, Description("Cell resistance at the reference LED current.")]
+        [Serialize, NoPreferredSeries, Description("Cell resistance at the reference LED current.")]
         public Quantity Ron { get { return ron; } set { if (ron.Set(value)) NotifyChanged(nameof(Ron)); } }
 
         private Quantity roff = new Quantity(5e6m, Units.Ohm);
-        [Serialize, Description("Cell resistance with the LED dark.")]
+        [Serialize, NoPreferredSeries, Description("Cell resistance with the LED dark.")]
         public Quantity Roff { get { return roff; } set { if (roff.Set(value)) NotifyChanged(nameof(Roff)); } }
 
         private Quantity iref = new Quantity(1e-3m, Units.A);

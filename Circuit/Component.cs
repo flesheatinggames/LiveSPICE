@@ -45,6 +45,38 @@ namespace Circuit
     public class Serialize : Attribute { };
 
     /// <summary>
+    /// Indicates the property's figure is not bought from a preferred-value series.
+    /// </summary>
+    /// <remarks>
+    /// <b>The question is not what unit a figure is in but where the figure came from.</b> Resistors
+    /// and capacitors are sold in decades of preferred values — E24 and E6 are the ordinary shelf —
+    /// so an interface can usefully say that a 2.5 kΩ resistor is 4.2 per cent from the nearest one
+    /// anybody manufactures. Ohms and farads appear in plenty of other places where that sentence is
+    /// false, and this marks them.
+    ///
+    /// Two kinds of figure carry it. The first is a device's own specification: an optocoupler's lit
+    /// and dark cell resistances are numbers a manufacturer measured and printed, and nobody sells a
+    /// 3.9 kΩ optocoupler, so offering to snap a VTL5C3's 4 kΩ to one inverts the feature — it
+    /// exists to say which figures are manufactured. The second is a part stocked in a series of its
+    /// own that no standard specifies: potentiometers come at 5 k, 10 k, 25 k, 50 k, 100 k, 250 k,
+    /// 500 k and 1 M, so measuring one against E24 says a 50 kΩ pot is two per cent from a 51 kΩ
+    /// part and offers to snap it to a value nobody sells.
+    ///
+    /// <b>It is on the property because the alternative was a list of types, and the list kept being
+    /// wrong.</b> <c>Preferred.SeriesFor</c> read "is this a knob or a vactrol" and had been extended
+    /// by hand twice, each time after somebody put a part in a circuit and read what the check said.
+    /// The chips milestone C11 adds carry dozens of datasheet constants in ohms and farads between
+    /// them, and a marker beside each figure is a statement about that figure rather than a growing
+    /// list somebody has to remember to add to.
+    ///
+    /// A part bought to a tighter series than the default still says so in the file, which is what
+    /// <c>Series</c> on a <c>&lt;Part&gt;</c> is for, and that takes precedence over both this and
+    /// the unit.
+    /// </remarks>
+    [AttributeUsage(AttributeTargets.Property)]
+    public class NoPreferredSeries : Attribute { };
+
+    /// <summary>
     /// Components are capable of performing MNA to produce a set of equations and unknowns describing their behavior.
     /// </summary>
     public abstract class Component : INotifyPropertyChanged

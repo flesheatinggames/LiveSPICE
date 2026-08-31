@@ -59,7 +59,7 @@ namespace Circuit
     public class VariableResistor : TwoTerminal, IPotControl
     {
         protected Quantity resistance = new Quantity(100, Units.Ohm);
-        [Serialize, Description("Resistance of this variable resistor.")]
+        [Serialize, NoPreferredSeries, Description("Resistance of this variable resistor.")]
         public Quantity Resistance { get { return resistance; } set { if (resistance.Set(value)) NotifyChanged(nameof(Resistance)); } }
 
         protected double wipe = 0.5;
