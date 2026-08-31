@@ -117,16 +117,37 @@ namespace Circuit
             // all, so both one-sided slopes are zero there. The channel-length modulation factor
             // multiplies both branches, so it cannot break either agreement.
             // `sbrender selftest jfet` measures both to a stated tolerance.
-            Expression id = Call.Sign(Vds) * (Vgds >= Vt0) * Beta * (1 + Lambda * AbsVds) *
-                Call.If(AbsVds < Vgds_t0,
-                    // Linear region.
-                    AbsVds * (2 * Vgds_t0 - AbsVds),
-                    // Saturation region.
-                    Vgds_t0 ^ 2);
+            Expression id = Call.Sign(Vds) * (Vgds >= Vt0) *
+                ChannelCurrent(Beta, Vgds_t0, AbsVds, Lambda);
 
             id = Mna.AddUnknownEqualTo("i" + Name + "d", id);
             CurrentSource.Analyze(Mna, Drain, Source, id);
         }
+
+        /// <summary>
+        /// The square law's magnitude: a channel's current for a given overdrive and a given
+        /// drain-source voltage, both taken as positive.
+        /// </summary>
+        /// <remarks>
+        /// <b>Shared rather than copied, so that the two regions go on meeting wherever it is
+        /// used.</b> Milestone C11 corrected the linear branch here and the correction is the sort
+        /// that gets un-corrected by a second copy: a photoFET's channel is this same equation with
+        /// the light setting the overdrive, and C12's MOSFET will be it again with the gate diodes
+        /// removed and a body terminal added. One expression means one place for the boundary to be
+        /// continuous at, and <c>sbrender selftest jfet</c> measures that boundary.
+        ///
+        /// The caller supplies the sign and any conduction condition, because those differ: a JFET
+        /// stops conducting below its threshold, and a photoFET in the dark does not stop but
+        /// becomes three hundred megohms.
+        /// </remarks>
+        public static Expression ChannelCurrent(
+            Expression Beta, Expression Overdrive, Expression AbsVds, Expression Lambda) =>
+            Beta * (1 + Lambda * AbsVds) *
+                Call.If(AbsVds < Overdrive,
+                    // Linear region.
+                    AbsVds * (2 * Overdrive - AbsVds),
+                    // Saturation region.
+                    Overdrive ^ 2);
 
         public static void LayoutSymbol(SymbolLayout Sym, JfetType Type, Terminal S, Terminal G, Terminal D, Func<string> Name, Func<string> Part)
         {
